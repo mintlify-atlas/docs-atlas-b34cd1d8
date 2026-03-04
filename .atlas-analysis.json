@@ -1,0 +1,174 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Junkie",
+  "projectDescription": "AI-powered Discord selfbot with multi-agent orchestration, code execution, and intelligent chat capabilities",
+  "theme": "aspen",
+  "primaryColor": "#5865F2",
+  "lightColor": "#7289DA",
+  "darkColor": "#404EED",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/team-system",
+              "concepts/agents",
+              "concepts/context-management"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/chat-handler",
+              "features/tldr-summaries",
+              "features/context-cache",
+              "features/backfill"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment",
+              "configuration/database",
+              "configuration/models",
+              "configuration/tracing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Tools & Integrations",
+        "groups": [
+          {
+            "group": "Built-in Tools",
+            "pages": [
+              "tools/e2b-sandbox",
+              "tools/history-tools",
+              "tools/bio-tools"
+            ]
+          },
+          {
+            "group": "External Integrations",
+            "pages": [
+              "tools/mcp-tools",
+              "tools/web-search",
+              "tools/code-execution"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Agents",
+        "groups": [
+          {
+            "group": "Agent System",
+            "pages": [
+              "agents/overview",
+              "agents/team-leader",
+              "agents/code-agent",
+              "agents/perplexity-agent",
+              "agents/context-qna-agent"
+            ]
+          },
+          {
+            "group": "Customization",
+            "pages": [
+              "agents/creating-agents",
+              "agents/system-prompts",
+              "agents/memory-management"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Modules",
+            "pages": [
+              "api/agent-factory",
+              "api/chat-handler",
+              "api/selfbot",
+              "api/config"
+            ]
+          },
+          {
+            "group": "Database",
+            "pages": [
+              "api/database",
+              "api/execution-context"
+            ]
+          },
+          {
+            "group": "Tools API",
+            "pages": [
+              "api/tools/e2b-toolkit",
+              "api/tools/history-tools",
+              "api/tools/bio-tools",
+              "api/tools/tools-factory"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Deployment",
+        "groups": [
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/docker",
+              "deployment/railway",
+              "deployment/environment-setup"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "deployment/monitoring",
+              "deployment/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-agent AI team orchestration with specialized roles",
+    "Discord selfbot with intelligent chat responses and context awareness",
+    "E2B sandbox for secure code execution and Python runtime",
+    "Advanced context management with PostgreSQL-backed message cache",
+    "Real-time conversation summarization with TL;DR command",
+    "User memory persistence and bio/avatar fetching tools",
+    "MCP (Model Context Protocol) tool integration",
+    "Phoenix tracing and observability for agent operations",
+    "Background message backfill and sync for complete history",
+    "Support for multiple LLM providers (Groq, OpenAI-compatible APIs)"
+  ],
+  "publicApiSurface": [
+    "SelfBot(token, prefix) - Discord selfbot wrapper",
+    "async_ask_junkie(user_text, user_id, session_id, images, client) - Main agent interaction",
+    "get_or_create_team(user_id, client) - Retrieve or create user's AI team",
+    "create_team_for_user(user_id, client) - Factory for creating agent teams",
+    "setup_chat(bot) - Initialize chat handler with bot instance",
+    "setup_tldr(bot) - Initialize TL;DR summarization command",
+    "E2BToolkit - Sandbox management and code execution toolkit",
+    "HistoryTools.read_chat_history(limit) - Fetch message history",
+    "BioTools.get_user_details(user_id) - Fetch Discord user info",
+    "BioTools.get_user_avatar(user_id) - Fetch user avatar image",
+    "init_db() - Initialize PostgreSQL database connection",
+    "get_messages(channel_id, limit) - Retrieve cached messages",
+    "backfill_channel(channel, target_limit) - Backfill message history"
+  ]
+}
