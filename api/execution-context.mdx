@@ -1,0 +1,177 @@
+---
+title: Execution Context
+description: Context variables for tracking current Discord channel
+---
+
+The Execution Context module provides context variables for tracking the current Discord channel during tool execution.
+
+## Overview
+
+Uses Python's `contextvars` to maintain thread-safe channel information that tools can access.
+
+## set_current_channel_id
+
+Set the current channel ID in the execution context.
+
+```python
+def set_current_channel_id(channel_id: int)
+```
+
+<ParamField path="channel_id" type="int" required>
+  Discord channel ID to set
+</ParamField>
+
+### Example
+
+```python
+from core.execution_context import set_current_channel_id
+
+set_current_channel_id(987654321)
+```
+
+## get_current_channel_id
+
+Get the current channel ID from the execution context.
+
+```python
+def get_current_channel_id() -> Optional[int]
+```
+
+<ResponseField name="return" type="Optional[int]">
+  Current channel ID, or None if not set
+</ResponseField>
+
+### Example
+
+```python
+from core.execution_context import get_current_channel_id
+
+channel_id = get_current_channel_id()
+if channel_id:
+    print(f"Current channel: {channel_id}")
+```
+
+## set_current_channel
+
+Set the current Discord channel object in the execution context.
+
+```python
+def set_current_channel(channel: object)
+```
+
+<ParamField path="channel" type="object" required>
+  Discord channel object (TextChannel, DMChannel, etc.)
+</ParamField>
+
+### Example
+
+```python
+from core.execution_context import set_current_channel
+
+@bot.event
+async def on_message(message):
+    set_current_channel(message.channel)
+    # ... rest of message handling
+```
+
+## get_current_channel
+
+Get the current Discord channel object from the execution context.
+
+```python
+def get_current_channel() -> Optional[object]
+```
+
+<ResponseField name="return" type="Optional[object]">
+  Current Discord channel object, or None if not set
+</ResponseField>
+
+### Example
+
+```python
+from core.execution_context import get_current_channel
+
+channel = get_current_channel()
+if channel:
+    await channel.send("Hello!")
+```
+
+## Usage Pattern
+
+The execution context is typically set at the start of message processing:
+
+```python
+from core.execution_context import set_current_channel_id, set_current_channel
+
+@bot.event
+async def on_message(message):
+    # Set execution context for tools
+    set_current_channel_id(message.channel.id)
+    set_current_channel(message.channel)
+    
+    # Now tools can access the channel
+    response = await async_ask_junkie(
+        user_text=message.content,
+        user_id=str(message.author.id),
+        session_id=str(message.channel.id)
+    )
+    
+    await message.channel.send(response)
+```
+
+## Tool Access Example
+
+Tools can access the execution context:
+
+```python
+from core.execution_context import get_current_channel_id, get_current_channel
+from agno.tools import Toolkit
+
+class MyTool(Toolkit):
+    def __init__(self):
+        super().__init__(name="my_tool")
+        self.register(self.do_something)
+    
+    async def do_something(self) -> str:
+        # Access current channel from context
+        channel_id = get_current_channel_id()
+        channel = get_current_channel()
+        
+        if not channel:
+            return "No channel context available"
+        
+        # Use channel for operations
+        await channel.send("Tool is working...")
+        return f"Completed in channel {channel_id}"
+```
+
+## Context Variables
+
+The module maintains two context variables:
+
+### _current_channel_id
+
+<ResponseField name="_current_channel_id" type="ContextVar[Optional[int]]">
+  Stores the current Discord channel ID
+</ResponseField>
+
+### _current_channel
+
+<ResponseField name="_current_channel" type="ContextVar[Optional[object]]">
+  Stores the current Discord channel object
+</ResponseField>
+
+## Thread Safety
+
+Context variables are thread-safe and isolated per async task:
+
+- Each message processing task has its own context
+- Concurrent messages don't interfere with each other
+- No manual cleanup required
+
+## Benefits
+
+- **Implicit Context**: Tools don't need channel passed as parameter
+- **Type Safety**: Optional types indicate when context might be missing
+- **Async Safe**: Works correctly with asyncio and concurrent tasks
+- **Clean API**: Simple getter/setter pattern

@@ -1,0 +1,433 @@
+---
+title: "Context Cache"
+description: "Message caching and context building system for conversational AI"
+---
+
+## Overview
+
+The context cache is Junkie's intelligent message storage and retrieval system. It uses PostgreSQL for persistent storage, enabling the bot to maintain conversation history across restarts and build context-aware prompts for AI responses.
+
+## Architecture
+
+The system consists of three main components:
+
+1. **Message Storage**: PostgreSQL database for persistent caching
+2. **Context Retrieval**: Efficient message fetching with API fallback
+3. **Prompt Building**: Context-aware prompt construction with metadata
+
+## Configuration
+
+### Environment Variables
+
+```python
+# Cache configuration
+CACHE_TTL = int(os.getenv("CACHE_TTL", "120"))  # seconds
+from core.config import CONTEXT_AGENT_MAX_MESSAGES
+MAX_MESSAGES_IN_CACHE = CONTEXT_AGENT_MAX_MESSAGES
+
+# Timezone configuration
+_timezone_str = os.getenv("DISCORD_TIMEZONE", "Asia/Kolkata")
+```
+
+Source: `discord_bot/context_cache.py:25-34`
+
+### Key Settings
+
+- **CACHE_TTL**: Cache time-to-live in seconds (default: 120)
+- **CONTEXT_AGENT_MAX_MESSAGES**: Maximum messages to include in context
+- **DISCORD_TIMEZONE**: Timezone for timestamp formatting (default: Asia/Kolkata)
+- **BACKFILL_MAX_FETCH_LIMIT**: Maximum messages to fetch in one operation (default: 1000)
+
+## Timestamp Formatting
+
+The system uses intelligent relative timestamps for better context understanding:
+
+```python
+def format_message_timestamp(message_created_at, current_time: datetime) -> str:
+    """
+    Format message timestamp with relative time indication.
+    """
+    time_diff = current_time - message_created_at
+    
+    if time_diff < timedelta(minutes=1):
+        return "[just now]"
+    elif time_diff < timedelta(hours=1):
+        minutes = int(time_diff.total_seconds() / 60)
+        return f"[{minutes}m ago]"
+    elif time_diff < timedelta(days=1):
+        hours = int(time_diff.total_seconds() / 3600)
+        return f"[{hours}h ago]"
+    elif time_diff < timedelta(days=7):
+        days = time_diff.days
+        return f"[{days}d ago]"
+    else:
+        return f"[{message_created_at.strftime('%b %d, %H:%M')}]"
+```
+
+Source: `discord_bot/context_cache.py:43-76`
+
+### Timestamp Examples
+
+- Recent: `[just now]`, `[5m ago]`, `[2h ago]`
+- This week: `[3d ago]`
+- Older: `[Feb 15, 14:30]`
+
+## Message Retrieval
+
+### Primary Retrieval Flow
+
+The `get_recent_context` function implements a smart two-tier retrieval strategy:
+
+```python
+async def get_recent_context(channel, limit: int = 500, before_message=None) -> List[str]:
+    """
+    Get recent messages from DB or Discord API.
+    Implements loop prevention to avoid infinite recursion.
+    """
+    channel_id = channel.id
+    
+    # 1. Try DB first
+    db_messages = await get_messages(channel_id, limit)
+    
+    # If we have enough messages, return them
+    if len(db_messages) >= limit and before_message is None:
+        formatted = []
+        current_time = datetime.now(timezone.utc)
+        for m in db_messages:
+            # Calculate relative time dynamically
+            rel_time = format_message_timestamp(m['created_at'], current_time)
+            formatted.append(f"{rel_time} {m['author_name']}({m['author_id']}): {m['content']}")
+        return formatted
+```
+
+Source: `discord_bot/context_cache.py:83-104`
+
+### API Fallback Strategy
+
+When the database doesn't have enough messages, the system falls back to Discord's API:
+
+```python
+# 2. If DB has insufficient data, we might rely on backfill or fetch fresh
+if len(db_messages) == 0:
+    logger.info(f"[get_recent_context] DB empty for {channel_id}, fetching from API.")
+    return await fetch_and_cache_from_api(channel, limit, before_message)
+
+# If we have some data but not enough, check if we can fetch more
+if len(db_messages) < limit:
+    # Check if channel is fully backfilled (meaning no more history exists)
+    is_full = await is_channel_fully_backfilled(channel_id)
+    
+    if not is_full:
+        needed = limit - len(db_messages)
+        logger.info(f"[get_recent_context] DB has {len(db_messages)} messages, need {needed} more. Fetching from API.")
+        
+        # Oldest message in DB is the first one in the list (chronological)
+        oldest_msg_id = db_messages[0]['message_id']
+        
+        try:
+            before_obj = discord.Object(id=oldest_msg_id)
+            more_messages = await fetch_and_cache_from_api(channel, limit=needed, before_message=before_obj)
+            
+            if not more_messages:
+                # If API returns nothing, we are likely fully backfilled
+                await mark_channel_fully_backfilled(channel_id, True)
+        except Exception as e:
+            logger.error(f"[get_recent_context] Error fetching more history: {e}")
+```
+
+Source: `discord_bot/context_cache.py:106-132`
+
+## API Fetch and Cache
+
+The `fetch_and_cache_from_api` function handles Discord API interaction:
+
+```python
+async def fetch_and_cache_from_api(channel, limit, before_message=None, after_message=None):
+    """Helper to fetch from API and cache to DB."""
+    try:
+        channel_name = getattr(channel, "name", "DM")
+        logger.info(f"[fetch_and_cache] Fetching up to {limit} messages for channel {channel_name} ({channel.id})")
+        messages = []
+        current_time = datetime.now(timezone.utc)
+        
+        # Cap fetch_limit to prevent overwhelming the API (Discord max is 100 per request)
+        BACKFILL_MAX_FETCH_LIMIT = int(os.getenv("BACKFILL_MAX_FETCH_LIMIT", "1000"))
+        fetch_limit = min(int(limit * 1.2), BACKFILL_MAX_FETCH_LIMIT)  # 20% buffer, capped
+```
+
+Source: `discord_bot/context_cache.py:149-160`
+
+### Message Content Enrichment
+
+Messages are enriched with attachments and embeds:
+
+```python
+for m in messages:
+    # Build content with attachments and embeds
+    content_parts = []
+    if m.content:
+        content_parts.append(m.content)
+    if m.attachments:
+        for att in m.attachments:
+            content_parts.append(f"[Attachment: {att.url}]")
+    if m.embeds and not m.attachments:  # Only add embeds if no attachments (avoid duplication)
+        content_parts.append(f"[Embed: {len(m.embeds)} embed(s)]")
+    
+    content = " ".join(content_parts) if content_parts else "[Empty message]"
+    
+    # Store in DB (handles both insert and update for edits)
+    await store_message(
+        message_id=m.id,
+        channel_id=channel.id,
+        author_id=m.author.id,
+        author_name=m.author.display_name,
+        content=content,
+        created_at=m.created_at,
+        timestamp_str=timestamp_str
+    )
+```
+
+Source: `discord_bot/context_cache.py:204-224`
+
+## Context Prompt Building
+
+The `build_context_prompt` function is the heart of context-aware conversations:
+
+```python
+async def build_context_prompt(message, raw_prompt: str, limit: int = None, reply_to_message=None):
+    """
+    Build a model-ready text prompt.
+    """
+    if limit is None:
+        limit = MAX_MESSAGES_IN_CACHE
+
+    user_label = f"{message.author.display_name}({message.author.id})"
+    context_lines = await get_recent_context(message.channel, limit=limit, before_message=message)
+
+    # Trim if needed
+    if len(context_lines) > limit:
+        context_lines = context_lines[-limit:]
+```
+
+Source: `discord_bot/context_cache.py:245-257`
+
+### Metadata Injection
+
+The system adds channel and guild metadata for better context:
+
+```python
+# Metadata
+try:
+    channel_name = getattr(message.channel, "name", "DM")
+    guild_name = getattr(message.guild, "name", "DM")
+except Exception:
+    channel_name = "unknown"
+    guild_name = "DM"
+
+channel_meta = (
+    f"Channel ID: {message.channel.id}\n"
+    f"Channel: {channel_name}\n"
+    f"Guild: {guild_name}\n"
+    "----\n"
+)
+```
+
+Source: `discord_bot/context_cache.py:260-272`
+
+### Reply Context Integration
+
+When users reply to messages, that context is explicitly highlighted:
+
+```python
+# Format Reply Context if present
+reply_context_str = ""
+if reply_to_message:
+    reply_ts = format_message_timestamp(reply_to_message.created_at, now)
+    reply_author = f"{reply_to_message.author.display_name}({reply_to_message.author.id})"
+    reply_content = reply_to_message.clean_content
+    reply_context_str = (
+        f"\n[REPLY CONTEXT]\n"
+        f"The user is replying to:\n"
+        f"{reply_ts} {reply_author}: {reply_content}\n"
+        f"----------------\n"
+    )
+```
+
+Source: `discord_bot/context_cache.py:285-296`
+
+### Final Prompt Structure
+
+The complete prompt combines all elements:
+
+```python
+prompt = (
+    f"{channel_meta}"
+    f"Current Time: {current_time_str}\n"
+    f"Timestamps are relative to this time.\n\n"
+    f"Conversation History:\n"
+    + "\n".join(context_lines)
+    + f"\n{reply_context_str}"
+    + f"\n{message_timestamp} {user_label} says: {raw_prompt}\n\n"
+    f"IMPORTANT: The message above is the CURRENT message that you need to respond to."
+)
+return prompt
+```
+
+Source: `discord_bot/context_cache.py:298-308`
+
+## Cache Updates
+
+### Appending New Messages
+
+```python
+async def append_message_to_cache(message):
+    """
+    Append a new message to the DB.
+    """
+    if not message.content.strip():
+        return
+
+    current_time = datetime.now(timezone.utc)
+    timestamp_str = message.created_at.strftime("%Y-%m-%d %H:%M:%S")
+    
+    await store_message(
+        message_id=message.id,
+        channel_id=message.channel.id,
+        author_id=message.author.id,
+        author_name=message.author.display_name,
+        content=message.clean_content,
+        created_at=message.created_at,
+        timestamp_str=timestamp_str
+    )
+```
+
+Source: `discord_bot/context_cache.py:315-333`
+
+### Updating Edited Messages
+
+```python
+async def update_message_in_cache(before, after):
+    """
+    Update a message in the DB when it's edited.
+    """
+    # Build updated content with attachments
+    content_parts = []
+    if after.content:
+        content_parts.append(after.content)
+    if after.attachments:
+        for att in after.attachments:
+            content_parts.append(f"[Attachment: {att.url}]")
+    if after.embeds and not after.attachments:
+        content_parts.append(f"[Embed: {len(after.embeds)} embed(s)]")
+    
+    content = " ".join(content_parts) if content_parts else "[Empty message]"
+    timestamp_str = after.created_at.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Update in database (store_message handles upsert)
+    await store_message(
+        message_id=after.id,
+        channel_id=after.channel.id,
+        author_id=after.author.id,
+        author_name=after.author.display_name,
+        content=content,
+        created_at=after.created_at,
+        timestamp_str=timestamp_str
+    )
+```
+
+Source: `discord_bot/context_cache.py:336-365`
+
+### Deleting Messages
+
+```python
+async def delete_message_from_cache(message):
+    """
+    Remove a message from the DB when it's deleted.
+    """
+    from core.database import delete_message
+    await delete_message(message.id)
+```
+
+Source: `discord_bot/context_cache.py:368-373`
+
+## Performance Optimizations
+
+### Loop Prevention
+
+The system includes safeguards against infinite recursion:
+
+```python
+# FIXED: Don't re-fetch in a loop. Return what we have after one attempt.
+logger.info(f"[get_recent_context] Returning {len(db_messages)} messages from DB (requested {limit}).")
+
+# Format messages with current time (calculated once)
+current_time = datetime.now(timezone.utc)
+formatted = []
+
+# Re-query DB one final time to include any newly cached messages
+final_db_messages = await get_messages(channel_id, limit)
+```
+
+Source: `discord_bot/context_cache.py:134-142`
+
+### Fetch Limits
+
+API requests are capped to prevent overwhelming Discord:
+
+```python
+# Cap fetch_limit to prevent overwhelming the API (Discord max is 100 per request)
+# Reasonable cap: 1000 messages (10 API requests with proper pagination)
+BACKFILL_MAX_FETCH_LIMIT = int(os.getenv("BACKFILL_MAX_FETCH_LIMIT", "1000"))
+fetch_limit = min(int(limit * 1.2), BACKFILL_MAX_FETCH_LIMIT)  # 20% buffer, capped
+```
+
+Source: `discord_bot/context_cache.py:157-160`
+
+### Timezone Support
+
+Optional pytz integration for accurate timezone handling:
+
+```python
+try:
+    import pytz
+    _timezone_str = os.getenv("DISCORD_TIMEZONE", "Asia/Kolkata")
+    _timezone = pytz.timezone(_timezone_str)
+    _has_pytz = True
+except ImportError:
+    _timezone_str = "UTC"
+    _timezone = timezone.utc
+    _has_pytz = False
+    logger.warning("pytz not installed, using UTC. Install pytz for timezone support.")
+```
+
+Source: `discord_bot/context_cache.py:31-40`
+
+## Error Handling
+
+The system gracefully handles common errors:
+
+```python
+try:
+    # Fetch and cache logic
+except discord.errors.Forbidden:
+    logger.warning(f"[fetch_and_cache] Missing access to channel {channel.id}. Skipping.")
+    return []
+except Exception as e:
+    logger.error(f"[fetch_and_cache] Error: {e}", exc_info=True)
+    return []
+```
+
+Source: `discord_bot/context_cache.py:233-238`
+
+## Database Integration
+
+The cache integrates with PostgreSQL through the core database module:
+
+- `store_message()`: Insert or update message (upsert)
+- `get_messages()`: Retrieve messages for a channel
+- `delete_message()`: Remove deleted messages
+- `is_channel_fully_backfilled()`: Check backfill status
+- `mark_channel_fully_backfilled()`: Update backfill status
+- `get_message_count()`: Count messages in channel
+- `get_latest_message_id()`: Get newest message ID
+- `get_oldest_message_id()`: Get oldest message ID

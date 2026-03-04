@@ -1,0 +1,197 @@
+---
+title: Welcome to Junkie
+description: AI-powered Discord selfbot with multi-agent orchestration, code execution, and intelligent chat capabilities
+mode: custom
+---
+
+<div className="relative overflow-hidden dark:bg-[#0f1117] bg-white">
+  {/* Hero Section */}
+  <div className="relative py-20 px-4 sm:px-6 lg:px-8">
+    <div className="max-w-7xl mx-auto">
+      <div className="text-center">
+        <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold dark:text-gray-100 text-gray-900 mb-6">
+          Junkie Documentation
+        </h1>
+        <p className="text-xl sm:text-2xl dark:text-gray-400 text-gray-600 max-w-3xl mx-auto mb-10">
+          Build intelligent Discord experiences with multi-agent AI orchestration, secure code execution, and comprehensive context management
+        </p>
+        <div className="flex flex-wrap gap-4 justify-center">
+          <a
+            href="/quickstart"
+            className="px-8 py-3.5 rounded-lg bg-[#5865F2] text-white font-semibold hover:bg-[#4752C4] transition-colors no-underline"
+          >
+            Get Started
+          </a>
+          <a
+            href="/concepts/architecture"
+            className="px-8 py-3.5 rounded-lg border dark:border-[#27272a] border-gray-300 dark:bg-white/5 bg-gray-50 dark:text-gray-100 text-gray-900 font-semibold dark:hover:border-[#5865F2] hover:border-[#5865F2] transition-colors no-underline"
+          >
+            Explore Architecture
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{/* Quick Start Section */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-semibold dark:text-white text-gray-900 mb-3">
+    Quick start
+  </h2>
+  <p className="text-base dark:text-gray-400 text-gray-600 mb-8">
+    Get Junkie running in minutes with these simple steps
+  </p>
+
+  <Steps>
+    <Step title="Clone the repository">
+      Clone the Junkie repository from GitHub:
+      ```bash
+      git clone https://github.com/maanya0/junkie.git
+      cd junkie
+      ```
+    </Step>
+
+    <Step title="Configure environment variables">
+      Create a `.env` file with your Discord token and API keys:
+      ```bash
+      DISCORD_TOKEN=your_discord_token
+      GROQ_API_KEY=your_groq_api_key
+      CUSTOM_PROVIDER_API_KEY=your_openai_api_key
+      POSTGRES_URL=your_postgres_connection_string
+      E2B_API_KEY=your_e2b_api_key
+      ```
+      <Note>See the [environment configuration](/configuration/environment) guide for all available options.</Note>
+    </Step>
+
+    <Step title="Install dependencies">
+      Install Python dependencies using pip or uv:
+      ```bash
+      pip install -r requirements.txt
+      ```
+    </Step>
+
+    <Step title="Run the bot">
+      Start Junkie with the main entry point:
+      ```bash
+      python main.py
+      ```
+      The bot will connect to Discord and begin processing commands with the `!` prefix.
+    </Step>
+  </Steps>
+</div>
+
+{/* Key Features */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-semibold dark:text-white text-gray-900 mb-3">
+    Key features
+  </h2>
+  <p className="text-base dark:text-gray-400 text-gray-600 mb-8">
+    Powerful capabilities for building intelligent Discord bots
+  </p>
+
+  <CardGroup cols={2}>
+    <Card title="Multi-agent orchestration" icon="users-gear" href="/concepts/team-system">
+      Deploy specialized AI agents for code execution, web search, and context analysis that work together seamlessly
+    </Card>
+    <Card title="E2B sandbox execution" icon="terminal" href="/tools/e2b-sandbox">
+      Run Python code and shell commands in secure, isolated sandboxes with full file system access
+    </Card>
+    <Card title="Context-aware responses" icon="messages" href="/features/context-cache">
+      Maintain conversation history with PostgreSQL-backed caching and intelligent context retrieval
+    </Card>
+    <Card title="Memory persistence" icon="brain" href="/agents/memory-management">
+      Store and recall user-specific information across sessions with automatic memory management
+    </Card>
+    <Card title="TL;DR summaries" icon="compress" href="/features/tldr-summaries">
+      Generate conversation summaries on demand with the `.tldr` command
+    </Card>
+    <Card title="Phoenix tracing" icon="chart-line" href="/configuration/tracing">
+      Monitor agent performance and debug interactions with integrated observability
+    </Card>
+  </CardGroup>
+</div>
+
+{/* Architecture Overview */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-semibold dark:text-white text-gray-900 mb-3">
+    Architecture overview
+  </h2>
+  <p className="text-base dark:text-gray-400 text-gray-600 mb-8">
+    Understand how Junkie's components work together
+  </p>
+
+  <CardGroup cols={3}>
+    <Card title="Team system" icon="diagram-project" href="/concepts/team-system">
+      Learn how the multi-agent team orchestrates specialized agents
+    </Card>
+    <Card title="Agent roles" icon="robot" href="/concepts/agents">
+      Explore the specialized agents and their capabilities
+    </Card>
+    <Card title="Context management" icon="database" href="/concepts/context-management">
+      Understand message caching and history retrieval
+    </Card>
+  </CardGroup>
+</div>
+
+{/* Integration Cards */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-semibold dark:text-white text-gray-900 mb-3">
+    Integrations & tools
+  </h2>
+  <p className="text-base dark:text-gray-400 text-gray-600 mb-8">
+    Extend Junkie with powerful external services
+  </p>
+
+  <CardGroup cols={2}>
+    <Card title="MCP tools" icon="plug" href="/tools/mcp-tools">
+      Connect to Model Context Protocol servers for extended capabilities
+    </Card>
+    <Card title="Web search" icon="magnifying-glass" href="/tools/web-search">
+      Access real-time information with Perplexity Sonar and Exa search
+    </Card>
+    <Card title="Code execution" icon="code" href="/tools/code-execution">
+      Run code securely with E2B sandboxes and Groq Compound
+    </Card>
+    <Card title="User tools" icon="user" href="/tools/bio-tools">
+      Fetch Discord user profiles, avatars, and status information
+    </Card>
+  </CardGroup>
+</div>
+
+{/* Resources Section */}
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-semibold dark:text-white text-gray-900 mb-3">
+    Resources
+  </h2>
+  <p className="text-base dark:text-gray-400 text-gray-600 mb-8">
+    Additional materials to help you succeed
+  </p>
+
+  <CardGroup cols={2}>
+    <Card title="API reference" icon="book-open" href="/api/agent-factory">
+      Complete API documentation for all core modules
+    </Card>
+    <Card title="Deployment guide" icon="rocket" href="/deployment/docker">
+      Deploy Junkie to production with Docker or Railway
+    </Card>
+  </CardGroup>
+</div>
+
+{/* CTA Section */}
+<div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+  <div className="rounded-2xl dark:bg-[#1a1d27] bg-gray-50 dark:border-[#27272a] border border-gray-200 p-10 text-center">
+    <h2 className="text-3xl font-semibold dark:text-white text-gray-900 mb-4">
+      Ready to get started?
+    </h2>
+    <p className="text-lg dark:text-gray-400 text-gray-600 mb-8 max-w-2xl mx-auto">
+      Follow our quickstart guide to deploy your first AI-powered Discord bot in minutes
+    </p>
+    <a
+      href="/quickstart"
+      className="inline-block px-8 py-3.5 rounded-lg bg-[#5865F2] text-white font-semibold hover:bg-[#4752C4] transition-colors no-underline"
+    >
+      Get Started
+    </a>
+  </div>
+</div>

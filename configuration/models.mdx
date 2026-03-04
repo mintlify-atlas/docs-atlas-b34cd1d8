@@ -1,0 +1,287 @@
+---
+title: Model Configuration
+description: LLM provider setup and model selection for Junkie agents
+---
+
+Junkie supports multiple LLM providers through an OpenAI-compatible interface. Different agents can use different models optimized for their specific tasks.
+
+## Provider Configuration
+
+### Groq (Default)
+
+Groq is the default provider, offering fast inference for open-source models:
+
+```bash
+CUSTOM_PROVIDER=groq
+CUSTOM_MODEL=openai/gpt-oss-120b
+GROQ_API_KEY=gsk_...
+```
+
+**Model creation** (`agent/agent_factory.py:106-114`):
+
+```python
+if PROVIDER == "groq":
+    return OpenAILike(
+        id=MODEL_NAME,
+        max_tokens=4096,
+        temperature=MODEL_TEMPERATURE,
+        top_p=MODEL_TOP_P,
+        base_url="https://api.groq.com/openai/v1",
+        api_key=GROQ_API_KEY,
+    )
+```
+
+### Custom OpenAI-Compatible Provider
+
+Use any OpenAI-compatible API endpoint:
+
+```bash
+CUSTOM_PROVIDER=https://api.openai.com/v1
+CUSTOM_MODEL=gpt-5
+CUSTOM_PROVIDER_API_KEY=sk-...
+```
+
+**Model creation** (`agent/agent_factory.py:116-124`):
+
+```python
+return OpenAILike(
+    id=MODEL_NAME,
+    max_tokens=4096,
+    temperature=MODEL_TEMPERATURE,
+    top_p=MODEL_TOP_P,
+    base_url=PROVIDER,
+    api_key=CUSTOM_PROVIDER_API_KEY,
+)
+```
+
+## Environment Variables
+
+<ParamField path="CUSTOM_PROVIDER" type="string" default="groq">
+  Provider identifier or base URL:
+  - `groq` - Use Groq's API
+  - Any OpenAI-compatible base URL (e.g., `https://api.openai.com/v1`)
+</ParamField>
+
+<ParamField path="CUSTOM_MODEL" type="string" default="openai/gpt-oss-120b">
+  Model identifier for the main team leader agent.
+  
+  **Groq models:**
+  - `openai/gpt-oss-120b`
+  - `llama-3.1-70b-versatile`
+  - `mixtral-8x7b-32768`
+  
+  **OpenAI models:**
+  - `gpt-4-turbo`
+  - `gpt-5`
+  - `gpt-4o`
+</ParamField>
+
+<ParamField path="CUSTOM_PROVIDER_API_KEY" type="string" required="when using custom provider">
+  API key for custom OpenAI-compatible provider.
+</ParamField>
+
+<ParamField path="GROQ_API_KEY" type="string" required>
+  Groq API key. Required even when using custom providers, as some agents always use Groq.
+</ParamField>
+
+<ParamField path="MODEL_TEMPERATURE" type="float" default="0.3">
+  Sampling temperature (0.0 - 2.0). Lower values are more deterministic.
+</ParamField>
+
+<ParamField path="MODEL_TOP_P" type="float" default="0.9">
+  Nucleus sampling threshold (0.0 - 1.0).
+</ParamField>
+
+## Agent-Specific Models
+
+Junkie uses different models optimized for different agent roles:
+
+### Team Leader
+
+Uses the main model configured via `CUSTOM_PROVIDER` and `CUSTOM_MODEL`.
+
+```python
+model = create_model(user_id)
+team = Team(
+    name="Hero Team",
+    model=model,  # Main model
+    # ...
+)
+```
+
+Reference: `agent/agent_factory.py:310-327`
+
+### Code Agent
+
+Hardcoded to use `gpt-5` for advanced code generation:
+
+```python
+code_agent = Agent(
+    id="code-agent",
+    name="Code Agent",
+    model=OpenAILike(
+        id="gpt-5",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY,
+    ),
+    # ...
+)
+```
+
+Reference: `agent/agent_factory.py:196-204`
+
+### Perplexity Sonar Agent
+
+Uses Perplexity's `sonar-pro` for real-time web research:
+
+```python
+perplexity_agent = Agent(
+    id="pplx-agent",
+    name="Perplexity Sonar Pro",
+    model=OpenAILike(
+        id="sonar-pro",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY
+    ),
+    # ...
+)
+```
+
+Reference: `agent/agent_factory.py:234-245`
+
+### Groq Compound Agent
+
+Always uses Groq's `compound` model for fast execution:
+
+```python
+compound_agent = Agent(
+    id="groq-compound",
+    name="Groq Compound",
+    model=OpenAILike(
+        id="groq/compound",
+        max_tokens=8000,
+        base_url="https://api.groq.com/openai/v1",
+        api_key=GROQ_API_KEY
+    ),
+    # ...
+)
+```
+
+Reference: `agent/agent_factory.py:248-260`
+
+### Context Q&A Agent
+
+Uses a long-context model configured separately:
+
+```bash
+CONTEXT_AGENT_MODEL=gemini-2.5-flash-lite
+CONTEXT_AGENT_MAX_MESSAGES=50000
+```
+
+```python
+context_qna_agent = Agent(
+    id="context-qna-agent",
+    model=OpenAILike(
+        id=CONTEXT_AGENT_MODEL,
+        max_tokens=8000,
+        temperature=0.3,
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY,
+    ),
+    # ...
+)
+```
+
+Reference: `agent/agent_factory.py:264-290`
+
+### Memory Manager Model
+
+Always uses Groq for fast memory processing:
+
+```python
+memory_model = OpenAILike(
+    id="openai/gpt-oss-120b",
+    base_url="https://api.groq.com/openai/v1",
+    api_key=GROQ_API_KEY,
+)
+memory_manager = MemoryManager(
+    model=memory_model,
+    db=db,
+)
+```
+
+Reference: `agent/agent_factory.py:153-161`
+
+## System Prompt Management
+
+System prompts can be managed through Phoenix:
+
+```python
+def get_prompt() -> str:
+    """Return system prompt from Phoenix or fallback."""
+    prompt_name = "herocomp"
+    
+    try:
+        fetched = client.prompts.get(
+            prompt_identifier=prompt_name,
+            tag="production"
+        )
+        return fetched.messages[0].get("content")
+    except Exception as e:
+        return get_system_prompt()  # Fallback to local
+```
+
+Reference: `agent/agent_factory.py:126-147`
+
+## Example Configurations
+
+<CodeGroup>
+```bash Groq Only
+CUSTOM_PROVIDER=groq
+CUSTOM_MODEL=openai/gpt-oss-120b
+GROQ_API_KEY=gsk_your_key_here
+MODEL_TEMPERATURE=0.3
+MODEL_TOP_P=0.9
+```
+
+```bash OpenAI
+CUSTOM_PROVIDER=https://api.openai.com/v1
+CUSTOM_MODEL=gpt-5
+CUSTOM_PROVIDER_API_KEY=sk-your_key_here
+GROQ_API_KEY=gsk_your_key_here  # Still needed for memory & compound agent
+MODEL_TEMPERATURE=0.3
+```
+
+```bash Mixed Setup
+CUSTOM_PROVIDER=https://api.openai.com/v1
+CUSTOM_MODEL=gpt-5
+CUSTOM_PROVIDER_API_KEY=sk-openai_key
+GROQ_API_KEY=gsk_groq_key
+CONTEXT_AGENT_MODEL=gemini-2.5-flash-lite
+MODEL_TEMPERATURE=0.2
+```
+</CodeGroup>
+
+## API Key Requirements
+
+<Warning>
+`GROQ_API_KEY` is **always required**, even when using a custom provider, because:
+- Memory manager uses Groq's `openai/gpt-oss-120b`
+- Groq Compound agent uses `groq/compound`
+- Both agents are essential for Junkie's functionality
+</Warning>
+
+## Supported Providers
+
+Any provider compatible with OpenAI's API format will work:
+
+- **Groq** - Fast open-source models
+- **OpenAI** - GPT-4, GPT-5 models
+- **Together AI** - Various open models
+- **Perplexity** - Sonar models with web search
+- **Anthropic (via proxy)** - Claude models
+- **Local providers** - Ollama, LM Studio, etc.
+
+<Info>
+Make sure your provider supports the OpenAI API format with `/v1/chat/completions` endpoint.
+</Info>

@@ -1,0 +1,430 @@
+---
+title: Web Search
+description: Search the web with Perplexity Sonar and Exa for real-time information
+---
+
+Junkie integrates powerful web search capabilities through Perplexity Sonar Pro and Exa Search, enabling agents to fetch accurate, real-time, source-backed information from the live web.
+
+## Overview
+
+Web search tools provide:
+
+- **Perplexity Sonar Pro**: Real-time web search with source citations
+- **Exa Search**: Semantic search for research and analysis
+- **Agent Integration**: Dedicated search agents for team workflows
+- **Real-time Data**: Access to live web information
+
+## Perplexity Sonar Pro
+
+Perplexity Sonar Pro provides real-time web search with accurate, source-backed information.
+
+### Configuration
+
+```bash
+# .env file
+PROVIDER="https://your-openai-compatible-api.com"
+CUSTOM_PROVIDER_API_KEY="your-api-key"
+```
+
+### Agent Setup
+
+From `agent_factory.py:234-245`:
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAILike
+
+perplexity_agent = Agent(
+    id="pplx-agent",
+    name="Perplexity Sonar Pro",
+    model=OpenAILike(
+        id="sonar-pro",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY
+    ),
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+)
+```
+
+<ParamField path="id" type="str" required>
+  Agent identifier. Use `"pplx-agent"` for Perplexity agent.
+</ParamField>
+
+<ParamField path="name" type="str" required>
+  Human-readable agent name.
+</ParamField>
+
+<ParamField path="model" type="OpenAILike" required>
+  Model configuration with `id="sonar-pro"` for Perplexity.
+</ParamField>
+
+<ParamField path="add_datetime_to_context" type="bool" default="False">
+  Include current date/time in agent context.
+</ParamField>
+
+<ParamField path="timezone_identifier" type="str" default="UTC">
+  Timezone for datetime context (e.g., `"Asia/Kolkata"`).
+</ParamField>
+
+### Model Configuration
+
+```python
+from agno.models.openai import OpenAILike
+
+sonar_model = OpenAILike(
+    id="sonar-pro",
+    base_url=PROVIDER,
+    api_key=CUSTOM_PROVIDER_API_KEY
+)
+```
+
+<ParamField path="id" type="str" required>
+  Model ID. Use `"sonar-pro"` for Perplexity Sonar Pro.
+</ParamField>
+
+<ParamField path="base_url" type="str" required>
+  API endpoint URL for the model provider.
+</ParamField>
+
+<ParamField path="api_key" type="str" required>
+  API key for authentication.
+</ParamField>
+
+### Usage Example
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAILike
+from core.config import PROVIDER, CUSTOM_PROVIDER_API_KEY
+
+perplexity_agent = Agent(
+    id="pplx-agent",
+    name="Perplexity Sonar Pro",
+    model=OpenAILike(
+        id="sonar-pro",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY
+    ),
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+)
+
+# Agent can now search the web
+response = await perplexity_agent.run(
+    "What are the latest developments in AI?"
+)
+print(response.content)
+```
+
+## Exa Search
+
+Exa provides semantic search capabilities for research and competitive analysis.
+
+### Configuration
+
+```bash
+# .env file
+EXA_API_KEY="your-exa-api-key"
+```
+
+### Toolkit Setup
+
+```python
+from agno.tools.exa import ExaTools
+
+exa_tools = ExaTools()
+```
+
+No parameters required - API key is loaded from `EXA_API_KEY` environment variable.
+
+### Agent Integration
+
+From `agent_factory.py:182-187`:
+
+```python
+from agno.tools.exa import ExaTools
+
+code_agent_tools = [
+    MCPTools(transport="streamable-http", url="https://mcp.context7.com/mcp"),
+    e2b_toolkit,
+    ExaTools(),  # Add Exa search capabilities
+]
+
+code_agent = Agent(
+    name="Code Agent",
+    model=my_model,
+    tools=code_agent_tools
+)
+```
+
+### Usage Example
+
+```python
+from agno.agent import Agent
+from agno.tools.exa import ExaTools
+
+search_agent = Agent(
+    name="Search Agent",
+    model=my_model,
+    tools=[ExaTools()],
+    instructions="Use Exa to search for relevant information and research."
+)
+
+# Agent can now use Exa search
+response = await search_agent.run(
+    "Find recent research papers on transformer architectures"
+)
+```
+
+## Team Integration
+
+Integrating web search agents into a team workflow:
+
+```python
+from agno.team import Team
+from agno.agent import Agent
+from agno.models.openai import OpenAILike
+from agno.tools.exa import ExaTools
+
+# Perplexity agent for real-time web search
+perplexity_agent = Agent(
+    id="pplx-agent",
+    name="Perplexity Sonar Pro",
+    model=OpenAILike(
+        id="sonar-pro",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY
+    ),
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+)
+
+# Code agent with Exa search
+code_agent = Agent(
+    id="code-agent",
+    name="Code Agent",
+    model=my_model,
+    tools=[ExaTools()],
+)
+
+# Create team with search capabilities
+team = Team(
+    name="Research Team",
+    model=leader_model,
+    members=[perplexity_agent, code_agent],
+    instructions="Delegate search tasks to Perplexity agent for real-time info."
+)
+```
+
+## Use Cases
+
+### Real-Time News
+
+```python
+perplexity_agent = Agent(
+    name="Perplexity Sonar Pro",
+    model=OpenAILike(id="sonar-pro", base_url=PROVIDER, api_key=API_KEY),
+)
+
+response = await perplexity_agent.run(
+    "What are today's top technology news stories?"
+)
+```
+
+### Competitive Analysis
+
+```python
+from agno.tools.exa import ExaTools
+
+research_agent = Agent(
+    name="Research Agent",
+    model=my_model,
+    tools=[ExaTools()],
+)
+
+response = await research_agent.run(
+    "Compare pricing models of top AI API providers"
+)
+```
+
+### Fact Checking
+
+```python
+perplexity_agent = Agent(
+    name="Perplexity Sonar Pro",
+    model=OpenAILike(id="sonar-pro", base_url=PROVIDER, api_key=API_KEY),
+    add_datetime_to_context=True,
+)
+
+response = await perplexity_agent.run(
+    "Verify the latest unemployment statistics for the US"
+)
+```
+
+### Research Papers
+
+```python
+from agno.tools.exa import ExaTools
+
+research_agent = Agent(
+    name="Research Agent",
+    model=my_model,
+    tools=[ExaTools()],
+)
+
+response = await research_agent.run(
+    "Find recent papers on large language model alignment"
+)
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Model Selection">
+    - Use Perplexity Sonar Pro for real-time, source-backed searches
+    - Use Exa for semantic search and research tasks
+    - Combine both for comprehensive search coverage
+    - Consider cost and latency trade-offs
+  </Accordion>
+
+  <Accordion title="Datetime Context">
+    - Always set `add_datetime_to_context=True` for time-sensitive searches
+    - Configure appropriate `timezone_identifier`
+    - Enables accurate "today", "recent", "latest" queries
+    - Important for news and real-time information
+  </Accordion>
+
+  <Accordion title="Agent Instructions">
+    - Provide clear instructions about when to use search
+    - Specify source citation requirements
+    - Define search scope and depth
+    - Guide agents on handling ambiguous queries
+  </Accordion>
+
+  <Accordion title="Team Delegation">
+    - Delegate search tasks to specialized agents
+    - Use Perplexity agent for real-time queries
+    - Use code agent with Exa for research
+    - Avoid redundant searches across agents
+  </Accordion>
+</AccordionGroup>
+
+## Environment Variables
+
+```bash
+# .env file
+
+# Provider configuration (for Perplexity)
+PROVIDER="https://your-openai-compatible-api.com"
+CUSTOM_PROVIDER_API_KEY="your-api-key"
+
+# Exa Search
+EXA_API_KEY="your-exa-api-key"
+
+# Optional: Custom timezone
+TIMEZONE="Asia/Kolkata"
+```
+
+## Complete Example
+
+Full implementation from `agent_factory.py`:
+
+```python
+from agno.agent import Agent
+from agno.team import Team
+from agno.models.openai import OpenAILike
+from agno.tools.exa import ExaTools
+from tools.e2b_tools import E2BToolkit
+from agno.tools.mcp import MCPTools
+
+# Perplexity Sonar Pro agent
+perplexity_agent = Agent(
+    id="pplx-agent",
+    name="Perplexity Sonar Pro",
+    model=OpenAILike(
+        id="sonar-pro",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY
+    ),
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+)
+
+# Code agent with Exa search
+code_agent_tools = [
+    MCPTools(transport="streamable-http", url="https://mcp.context7.com/mcp"),
+    e2b_toolkit,
+    ExaTools(),
+]
+
+code_agent = Agent(
+    id="code-agent",
+    name="Code Agent",
+    role="Designing and executing complex code",
+    model=OpenAILike(
+        id="gpt-5",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY,
+    ),
+    tools=code_agent_tools,
+)
+
+# Create team with search capabilities
+team = Team(
+    name="Hero Team",
+    model=leader_model,
+    members=[perplexity_agent, code_agent],
+    instructions="Delegate search and research tasks appropriately."
+)
+```
+
+## Troubleshooting
+
+### API Key Issues
+
+```python
+import os
+
+# Check Exa API key
+if not os.getenv("EXA_API_KEY"):
+    print("Warning: EXA_API_KEY not set")
+
+# Check provider configuration
+if not os.getenv("CUSTOM_PROVIDER_API_KEY"):
+    print("Warning: CUSTOM_PROVIDER_API_KEY not set")
+```
+
+### Model Configuration
+
+```python
+# Verify Perplexity model setup
+model = OpenAILike(
+    id="sonar-pro",  # Must be exactly "sonar-pro"
+    base_url=PROVIDER,  # Check this URL
+    api_key=CUSTOM_PROVIDER_API_KEY  # Verify key is valid
+)
+```
+
+### Timezone Issues
+
+```python
+# Verify timezone setting
+agent = Agent(
+    name="Search Agent",
+    model=model,
+    add_datetime_to_context=True,  # Must be True
+    timezone_identifier="Asia/Kolkata",  # Use valid IANA timezone
+)
+```
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="E2B Sandbox" icon="box" href="/tools/e2b-sandbox">
+    Execute code with web scraping capabilities
+  </Card>
+  <Card title="MCP Tools" icon="plug" href="/tools/mcp-tools">
+    Extend search with Firecrawl and other MCP services
+  </Card>
+</CardGroup>

@@ -1,0 +1,194 @@
+---
+title: Team Leader
+description: Team orchestration and task delegation logic
+---
+
+## Overview
+
+The **Team Leader** is the main orchestrator in Junkie's multi-agent system. It receives user messages, delegates tasks to specialized agents, and synthesizes their responses.
+
+## Initialization
+
+```python
+# agent/agent_factory.py:310-327
+team = Team(
+    name="Hero Team",
+    model=model,
+    db=db,
+    members=agents,
+    tools=[BioTools(client=client), CalculatorTools()],
+    instructions=get_prompt(),  # System prompt from Phoenix
+    num_history_runs=AGENT_HISTORY_RUNS,
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+    markdown=True,
+    retries=AGENT_RETRIES,
+    debug_mode=DEBUG_MODE,
+    debug_level=DEBUG_LEVEL,
+    enable_user_memories=True,
+    memory_manager=memory_manager,
+)
+```
+
+## Configuration
+
+### Model Selection
+
+The team leader uses a configurable model based on `PROVIDER` and `MODEL_NAME`:
+
+```python
+# agent/agent_factory.py:103-124
+def create_model(user_id: str):
+    """Create a model instance for a specific user."""
+    
+    if PROVIDER == "groq":
+        return OpenAILike(
+            id=MODEL_NAME,
+            max_tokens=4096,
+            temperature=MODEL_TEMPERATURE,
+            top_p=MODEL_TOP_P,
+            base_url="https://api.groq.com/openai/v1",
+            api_key=GROQ_API_KEY,
+        )
+
+    # Custom provider
+    return OpenAILike(
+        id=MODEL_NAME,
+        max_tokens=4096,
+        temperature=MODEL_TEMPERATURE,
+        top_p=MODEL_TOP_P,
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY,
+    )
+```
+
+### Tools
+
+The team leader has direct access to:
+
+- **BioTools**: User profile and biographical information
+- **CalculatorTools**: Basic arithmetic operations
+
+Specialized tools (E2B, Firecrawl, MCP servers) are delegated to specific agents.
+
+### System Instructions
+
+Instructions are fetched from Phoenix (production tag) with fallback to local file:
+
+```python
+# agent/agent_factory.py:126-147
+def get_prompt() -> str:
+    """Return system prompt content pulled from Phoenix or fallback."""
+    prompt_name = "herocomp"
+
+    try:
+        fetched = client.prompts.get(prompt_identifier=prompt_name, tag="production")
+        if hasattr(fetched, "format"):
+            formatted = fetched.format()
+        else:
+            formatted = fetched
+    except Exception as e:
+        print("Phoenix prompt fetch error:", e)
+        return get_system_prompt()  # Fallback to local
+
+    messages = getattr(formatted, "messages", None)
+    if not messages:
+        return get_system_prompt()
+
+    content = messages[0].get("content")
+    return content or get_system_prompt()
+```
+
+## Delegation Hierarchy
+
+From `system_prompt.md:75-89`, the team leader follows this delegation order:
+
+1. **Deep research / real-time web data / complex analysis** → `pplx-agent`
+2. **Short code execution / quick runs / math** → `groq-compound`
+3. **Complex code / sandboxed execution / file ops** → `code-agent`
+4. **Long-context chat history / thread analysis** → `context-qna-agent`
+5. **MCP / platform-specific integrations** → `mcp_agent` (if present)
+
+### Delegation Rules
+
+- **Parallel delegation**: Can delegate to multiple agents simultaneously for complex tasks
+- **Fallback**: If chosen agent fails, attempt next appropriate agent once
+- **Transparency**: Never reveal internal delegation to users
+
+## Team Members
+
+The team is composed of specialized agents:
+
+```python
+# agent/agent_factory.py:303-305
+if mcp_tools:
+    agents = [perplexity_agent, compound_agent, code_agent, context_qna_agent, mcp_agent]
+else:
+    agents = [perplexity_agent, compound_agent, code_agent, context_qna_agent]
+```
+
+## Memory Integration
+
+The team leader has memory capabilities enabled:
+
+```python
+enable_user_memories=True,
+memory_manager=memory_manager,
+```
+
+This allows the team to:
+- Remember user preferences
+- Recall past conversations
+- Build context over time
+
+See [Memory Management](/agents/memory-management) for details.
+
+## Session Management
+
+Sessions are stored in PostgreSQL:
+
+```python
+db = AsyncPostgresDb(
+    db_url=async_db_url,
+    session_table="agent_sessions",
+    memory_table="user_memories",
+)
+```
+
+Conversation history is preserved across Discord interactions using `num_history_runs`.
+
+## Debugging
+
+Enable detailed logging:
+
+```bash
+DEBUG_MODE=true
+DEBUG_LEVEL=2
+```
+
+This shows:
+- Agent selection reasoning
+- Tool calls
+- Response synthesis
+- Memory operations
+
+## Context Awareness
+
+The team leader receives temporal context:
+
+```python
+add_datetime_to_context=True,
+timezone_identifier="Asia/Kolkata",
+```
+
+From `system_prompt.md:48-73`, this enables:
+- Understanding message timestamps
+- Distinguishing past from present
+- Time-sensitive responses
+- Reply context awareness
+
+## Next Steps
+
+- [Code Agent Configuration](/agents/code-agent)
+- [Perplexity Agent Setup](/agents/perplexity-agent)
+- [Creating Custom Agents](/agents/creating-agents)

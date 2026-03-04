@@ -1,0 +1,472 @@
+---
+title: MCP Tools
+description: Integrate Model Context Protocol tools for extended agent capabilities
+---
+
+The Model Context Protocol (MCP) integration allows Junkie agents to access external tools and services through a standardized protocol. This enables agents to use tools like web scrapers, code analysis, and more.
+
+## Overview
+
+MCP Tools provide:
+
+- **Multi-server support**: Connect to multiple MCP servers simultaneously
+- **Streamable HTTP transport**: Efficient communication with MCP servers
+- **Lazy initialization**: Tools are only loaded when needed
+- **Automatic reconnection**: Handles connection management
+- **Integration with agents**: Seamlessly add MCP tools to any agent
+
+## Installation
+
+MCP tools are part of the Agno framework:
+
+```python
+from agno.tools.mcp import MCPTools, MultiMCPTools
+```
+
+## Configuration
+
+Configure MCP servers via environment variable:
+
+```bash
+# Single MCP server
+export MCP_URLS="https://mcp.example.com/"
+
+# Multiple MCP servers (comma-separated)
+export MCP_URLS="https://mcp.example.com/,https://another-mcp.com/"
+```
+
+## Setup Functions
+
+### get_mcp_tools()
+
+Lazy initialization of MCP tools - creates MultiMCPTools instance only when needed.
+
+```python
+from tools.tools_factory import get_mcp_tools
+
+mcp_tools = get_mcp_tools()
+```
+
+**Returns**: `MultiMCPTools` instance or empty list if no MCP URLs configured.
+
+**Implementation** (from `tools_factory.py:9-30`):
+
+```python
+_mcp_tools = None
+_mcp_connected = False
+
+def get_mcp_tools():
+    """Lazy initialization of MCP tools - only create when needed."""
+    global _mcp_tools
+    if _mcp_tools is None:
+        if MCP_URLS:
+            # Support comma-separated URLs from env
+            urls = [url.strip() for url in MCP_URLS.split(",") if url.strip()]
+        else:
+            # Default fallback
+            urls = [
+                "https://litellm1-production-4090.up.railway.app/mcp/",
+            ]
+        
+        if urls:
+            _mcp_tools = MultiMCPTools(
+                urls=urls,
+                urls_transports=["streamable-http"],
+            )
+        else:
+            _mcp_tools = []
+    return _mcp_tools
+```
+
+### setup_mcp()
+
+Async function to connect to MCP tools.
+
+```python
+from tools.tools_factory import setup_mcp
+
+await setup_mcp()
+```
+
+**Implementation** (from `tools_factory.py:32-46`):
+
+```python
+async def setup_mcp():
+    """Lazy connect to MCP tools only if they exist."""
+    global _mcp_connected
+    mcp = get_mcp_tools()
+    if mcp and not _mcp_connected:
+        try:
+            if isinstance(mcp, MultiMCPTools):
+                await mcp.connect()
+                _mcp_connected = True
+                logger.info("MCP tools connected")
+        except Exception as e:
+            logger.warning(f"Failed to connect MCP tools: {e}")
+```
+
+## MCPTools Class
+
+Single MCP server connection.
+
+```python
+from agno.tools.mcp import MCPTools
+
+# Connect to a single MCP server
+mcp_tools = MCPTools(
+    transport="streamable-http",
+    url="https://mcp.context7.com/mcp"
+)
+```
+
+<ParamField path="transport" type="str" required>
+  Transport protocol. Use `"streamable-http"` for HTTP-based MCP servers.
+</ParamField>
+
+<ParamField path="url" type="str" required>
+  URL of the MCP server endpoint.
+</ParamField>
+
+## MultiMCPTools Class
+
+Connect to multiple MCP servers simultaneously.
+
+```python
+from agno.tools.mcp import MultiMCPTools
+
+mcp_tools = MultiMCPTools(
+    urls=[
+        "https://mcp.context7.com/mcp",
+        "https://another-mcp.example.com/mcp",
+    ],
+    urls_transports=["streamable-http"],
+)
+
+# Connect to all servers
+await mcp_tools.connect()
+```
+
+<ParamField path="urls" type="list[str]" required>
+  List of MCP server URLs to connect to.
+</ParamField>
+
+<ParamField path="urls_transports" type="list[str]" required>
+  List of transport protocols. Usually `["streamable-http"]`.
+</ParamField>
+
+## Agent Integration
+
+### Code Agent with MCP
+
+From `agent_factory.py:182-232`:
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAILike
+from agno.tools.mcp import MCPTools
+from tools.e2b_tools import E2BToolkit
+from agno.tools.exa import ExaTools
+
+# Build code agent tools with MCP
+code_agent_tools = [
+    MCPTools(transport="streamable-http", url="https://mcp.context7.com/mcp"),
+    e2b_toolkit,
+    ExaTools(),
+]
+
+# Add Firecrawl MCP server if API key is available
+if FIRECRAWL_API_KEY:
+    firecrawl_url = f"https://mcp.firecrawl.dev/{FIRECRAWL_API_KEY}/v2/mcp"
+    code_agent_tools.append(
+        MCPTools(transport="streamable-http", url=firecrawl_url)
+    )
+
+code_agent = Agent(
+    id="code-agent",
+    name="Code Agent",
+    role="Designing and executing complex code",
+    model=OpenAILike(
+        id="gpt-5",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY,
+    ),
+    tools=code_agent_tools,
+    instructions="You can use MCP tools for web scraping and code analysis."
+)
+```
+
+### Optional MCP Agent
+
+From `agent_factory.py:293-305`:
+
+```python
+# Create optional MCP agent if tools are configured
+mcp_tools = get_mcp_tools()
+if mcp_tools:
+    mcp_agent = Agent(
+        name="MCP Tools Agent",
+        model=model,
+        tools=[mcp_tools],
+        add_datetime_to_context=True,
+        timezone_identifier="Asia/Kolkata",
+        instructions="You specialize in handling MCP-based tool interactions."
+    )
+    agents = [perplexity_agent, compound_agent, code_agent, context_qna_agent, mcp_agent]
+else:
+    agents = [perplexity_agent, compound_agent, code_agent, context_qna_agent]
+```
+
+## Available MCP Servers
+
+### Context7 MCP
+
+```python
+MCPTools(transport="streamable-http", url="https://mcp.context7.com/mcp")
+```
+
+**Capabilities**: Code analysis, context understanding
+
+### Firecrawl MCP
+
+```python
+firecrawl_url = f"https://mcp.firecrawl.dev/{FIRECRAWL_API_KEY}/v2/mcp"
+MCPTools(transport="streamable-http", url=firecrawl_url)
+```
+
+**Capabilities**: Web scraping, content extraction
+**Requirements**: `FIRECRAWL_API_KEY` environment variable
+
+### Custom MCP Server
+
+```python
+MCPTools(transport="streamable-http", url="https://your-mcp-server.com/mcp")
+```
+
+## Usage Examples
+
+### Basic MCP Setup
+
+```python
+from tools.tools_factory import get_mcp_tools, setup_mcp
+
+# Get MCP tools instance
+mcp_tools = get_mcp_tools()
+
+# Connect to MCP servers
+await setup_mcp()
+
+# MCP tools are now ready to use
+```
+
+### Agent with MCP Tools
+
+```python
+from agno.agent import Agent
+from agno.tools.mcp import MCPTools
+
+mcp_agent = Agent(
+    name="MCP Agent",
+    model=my_model,
+    tools=[
+        MCPTools(transport="streamable-http", url="https://mcp.context7.com/mcp")
+    ],
+    instructions="Use MCP tools to analyze code and extract information."
+)
+
+# Agent can now use MCP tools
+response = await mcp_agent.run("Analyze this repository...")
+```
+
+### Multiple MCP Servers
+
+```python
+from agno.tools.mcp import MultiMCPTools
+
+mcp_tools = MultiMCPTools(
+    urls=[
+        "https://mcp.context7.com/mcp",
+        f"https://mcp.firecrawl.dev/{FIRECRAWL_API_KEY}/v2/mcp",
+        "https://custom-mcp.example.com/mcp",
+    ],
+    urls_transports=["streamable-http"],
+)
+
+await mcp_tools.connect()
+
+# Use with agent
+agent = Agent(
+    name="Multi-MCP Agent",
+    model=my_model,
+    tools=[mcp_tools]
+)
+```
+
+### Conditional MCP Loading
+
+```python
+from tools.tools_factory import get_mcp_tools
+
+# Only load MCP if configured
+mcp_tools = get_mcp_tools()
+if mcp_tools:
+    agent_tools.append(mcp_tools)
+    print("MCP tools enabled")
+else:
+    print("MCP tools not configured")
+```
+
+## Environment Configuration
+
+### Single MCP Server
+
+```bash
+# .env file
+MCP_URLS="https://mcp.context7.com/mcp"
+```
+
+### Multiple MCP Servers
+
+```bash
+# .env file
+MCP_URLS="https://mcp.context7.com/mcp,https://mcp.firecrawl.dev/YOUR_KEY/v2/mcp"
+```
+
+### With Firecrawl
+
+```bash
+# .env file
+MCP_URLS="https://mcp.context7.com/mcp"
+FIRECRAWL_API_KEY="fc-your-api-key"
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Lazy Initialization">
+    - Use `get_mcp_tools()` for lazy loading
+    - Only connect when MCP tools are actually needed
+    - Reduces startup overhead
+    - Handles missing configuration gracefully
+  </Accordion>
+
+  <Accordion title="Connection Management">
+    - Call `setup_mcp()` once at startup
+    - Handle connection failures gracefully
+    - Log connection status for debugging
+    - Retry logic is built into MultiMCPTools
+  </Accordion>
+
+  <Accordion title="Error Handling">
+    - Check if `get_mcp_tools()` returns valid instance
+    - Wrap `setup_mcp()` in try-except
+    - Provide fallback behavior if MCP unavailable
+    - Log warnings, not errors, for missing MCP
+  </Accordion>
+
+  <Accordion title="API Keys">
+    - Store API keys in environment variables
+    - Use conditional loading for paid services
+    - Construct URLs dynamically with API keys
+    - Never hardcode API keys in source code
+  </Accordion>
+</AccordionGroup>
+
+## Common Patterns
+
+### Startup Initialization
+
+```python
+import asyncio
+from tools.tools_factory import setup_mcp
+
+async def initialize_app():
+    # Setup MCP connections at startup
+    await setup_mcp()
+    print("MCP tools ready")
+
+asyncio.run(initialize_app())
+```
+
+### Conditional Agent Creation
+
+```python
+from tools.tools_factory import get_mcp_tools
+
+agents = [base_agent, code_agent, search_agent]
+
+# Add MCP agent only if configured
+mcp_tools = get_mcp_tools()
+if mcp_tools:
+    mcp_agent = Agent(
+        name="MCP Agent",
+        model=model,
+        tools=[mcp_tools]
+    )
+    agents.append(mcp_agent)
+```
+
+### Dynamic URL Construction
+
+```python
+import os
+from agno.tools.mcp import MCPTools
+
+# Firecrawl with API key
+if FIRECRAWL_API_KEY := os.getenv("FIRECRAWL_API_KEY"):
+    firecrawl_url = f"https://mcp.firecrawl.dev/{FIRECRAWL_API_KEY}/v2/mcp"
+    firecrawl_mcp = MCPTools(transport="streamable-http", url=firecrawl_url)
+```
+
+## Troubleshooting
+
+### Connection Failures
+
+```python
+import logging
+from tools.tools_factory import setup_mcp
+
+logger = logging.getLogger(__name__)
+
+try:
+    await setup_mcp()
+    logger.info("MCP connected successfully")
+except Exception as e:
+    logger.warning(f"MCP connection failed: {e}")
+    # Continue without MCP tools
+```
+
+### Missing Configuration
+
+```python
+from tools.tools_factory import get_mcp_tools
+
+mcp_tools = get_mcp_tools()
+if not mcp_tools or mcp_tools == []:
+    print("Warning: No MCP URLs configured")
+    print("Set MCP_URLS environment variable")
+```
+
+### Testing MCP Connection
+
+```python
+from tools.tools_factory import get_mcp_tools, setup_mcp
+
+mcp_tools = get_mcp_tools()
+if mcp_tools:
+    print(f"MCP URLs: {mcp_tools.urls}")
+    await setup_mcp()
+    print("MCP connection successful")
+else:
+    print("No MCP tools configured")
+```
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="E2B Sandbox" icon="box" href="/tools/e2b-sandbox">
+    Execute code in isolated sandboxes
+  </Card>
+  <Card title="Web Search" icon="magnifying-glass" href="/tools/web-search">
+    Search the web with Perplexity and Exa
+  </Card>
+</CardGroup>

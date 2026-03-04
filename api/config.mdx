@@ -1,0 +1,219 @@
+---
+title: Configuration
+description: Environment variables and configuration constants
+---
+
+The Config module loads and exports all environment variables used throughout Junkie.
+
+## Environment Loading
+
+Configuration is loaded from `.env` file using `python-dotenv`:
+
+```python
+from dotenv import load_dotenv
+load_dotenv()
+```
+
+## Database Configuration
+
+### POSTGRES_URL
+
+<ParamField path="POSTGRES_URL" type="str" default="">
+  PostgreSQL connection URL for database operations
+</ParamField>
+
+**Example:**
+```bash
+POSTGRES_URL=postgresql://user:pass@localhost:5432/junkie
+```
+
+## Model and Provider Configuration
+
+### PROVIDER
+
+<ParamField path="PROVIDER" type="str" default="groq">
+  AI model provider ("groq" or custom provider URL)
+</ParamField>
+
+### MODEL_NAME
+
+<ParamField path="MODEL_NAME" type="str" default="openai/gpt-oss-120b">
+  Model identifier to use
+</ParamField>
+
+### CUSTOM_PROVIDER_API_KEY
+
+<ParamField path="CUSTOM_PROVIDER_API_KEY" type="str" default="None">
+  API key for custom provider
+</ParamField>
+
+### GROQ_API_KEY
+
+<ParamField path="GROQ_API_KEY" type="str" default="">
+  Groq API key for Groq models
+</ParamField>
+
+### FIRECRAWL_API_KEY
+
+<ParamField path="FIRECRAWL_API_KEY" type="str" default="">
+  Firecrawl API key for web scraping capabilities
+</ParamField>
+
+## Agent Configuration
+
+### MODEL_TEMPERATURE
+
+<ParamField path="MODEL_TEMPERATURE" type="float" default="0.3">
+  Model temperature for response randomness (0.0-1.0)
+</ParamField>
+
+### MODEL_TOP_P
+
+<ParamField path="MODEL_TOP_P" type="float" default="0.9">
+  Top-p sampling parameter (0.0-1.0)
+</ParamField>
+
+### AGENT_HISTORY_RUNS
+
+<ParamField path="AGENT_HISTORY_RUNS" type="int" default="1">
+  Number of previous conversation runs to include in context
+</ParamField>
+
+### AGENT_RETRIES
+
+<ParamField path="AGENT_RETRIES" type="int" default="2">
+  Number of retry attempts for failed agent calls
+</ParamField>
+
+### DEBUG_MODE
+
+<ParamField path="DEBUG_MODE" type="bool" default="false">
+  Enable debug mode for agents
+</ParamField>
+
+### DEBUG_LEVEL
+
+<ParamField path="DEBUG_LEVEL" type="int" default="1">
+  Debug verbosity level (1-3)
+</ParamField>
+
+### MAX_AGENTS
+
+<ParamField path="MAX_AGENTS" type="int" default="100">
+  Maximum number of agent teams to cache in memory
+</ParamField>
+
+## Tracing Configuration
+
+### TRACING_ENABLED
+
+<ParamField path="TRACING_ENABLED" type="bool" default="false">
+  Enable Phoenix tracing for observability
+</ParamField>
+
+### PHOENIX_API_KEY
+
+<ParamField path="PHOENIX_API_KEY" type="str" default="None">
+  Phoenix API key for tracing
+</ParamField>
+
+### PHOENIX_ENDPOINT
+
+<ParamField path="PHOENIX_ENDPOINT" type="str" default="https://app.phoenix.arize.com/s/maanyapatel145/v1/traces">
+  Phoenix tracing endpoint URL
+</ParamField>
+
+### PHOENIX_PROJECT_NAME
+
+<ParamField path="PHOENIX_PROJECT_NAME" type="str" default="junkie">
+  Phoenix project name for trace organization
+</ParamField>
+
+## MCP Configuration
+
+### MCP_URLS
+
+<ParamField path="MCP_URLS" type="str" default="">
+  Comma-separated list of MCP server URLs
+</ParamField>
+
+**Example:**
+```bash
+MCP_URLS=https://mcp1.example.com,https://mcp2.example.com
+```
+
+## Chat Context Configuration
+
+### CONTEXT_AGENT_MODEL
+
+<ParamField path="CONTEXT_AGENT_MODEL" type="str" default="gemini-2.5-flash-lite">
+  Model to use for context/history analysis
+</ParamField>
+
+### CONTEXT_AGENT_MAX_MESSAGES
+
+<ParamField path="CONTEXT_AGENT_MAX_MESSAGES" type="int" default="50000">
+  Maximum messages to analyze for context
+</ParamField>
+
+### TEAM_LEADER_CONTEXT_LIMIT
+
+<ParamField path="TEAM_LEADER_CONTEXT_LIMIT" type="int" default="100">
+  Number of recent messages to include in team leader context
+</ParamField>
+
+## Usage Example
+
+```python
+from core.config import (
+    PROVIDER,
+    MODEL_NAME,
+    GROQ_API_KEY,
+    MAX_AGENTS,
+    POSTGRES_URL
+)
+
+print(f"Using provider: {PROVIDER}")
+print(f"Model: {MODEL_NAME}")
+print(f"Max agents: {MAX_AGENTS}")
+```
+
+## Environment File Template
+
+```bash
+# Database
+POSTGRES_URL=postgresql://user:pass@localhost:5432/junkie
+
+# Model Provider
+CUSTOM_PROVIDER=https://api.example.com/v1
+CUSTOM_PROVIDER_API_KEY=your_api_key
+CUSTOM_MODEL=gpt-5
+GROQ_API_KEY=your_groq_key
+
+# Agent Settings
+MODEL_TEMPERATURE=0.3
+MODEL_TOP_P=0.9
+AGENT_HISTORY_RUNS=1
+AGENT_RETRIES=2
+MAX_AGENTS=100
+
+# Debug
+DEBUG_MODE=false
+DEBUG_LEVEL=1
+
+# Tracing
+TRACING=false
+PHOENIX_API_KEY=your_phoenix_key
+PHOENIX_PROJECT_NAME=junkie
+
+# MCP
+MCP_URLS=https://mcp.example.com
+
+# Context
+CONTEXT_AGENT_MODEL=gemini-2.5-flash-lite
+CONTEXT_AGENT_MAX_MESSAGES=50000
+TEAM_LEADER_CONTEXT_LIMIT=100
+
+# Optional
+FIRECRAWL_API_KEY=your_firecrawl_key
+```

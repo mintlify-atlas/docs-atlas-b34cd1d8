@@ -1,0 +1,233 @@
+---
+title: Installation
+description: Detailed installation guide for Junkie
+---
+
+This guide covers everything you need to install and configure Junkie on your system.
+
+## Prerequisites
+
+<Note>
+  Junkie requires **Python 3.12 or higher** due to compatibility requirements with discord.py-self.
+</Note>
+
+### Check your Python version
+
+```bash
+python --version
+```
+
+If you need to install or upgrade Python, visit [python.org](https://www.python.org/downloads/).
+
+## Installation steps
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/yourusername/junkie.git
+cd junkie
+```
+
+### 2. Install dependencies
+
+Junkie uses several key dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+#### Core dependencies
+
+The `requirements.txt` file includes:
+
+```txt requirements.txt
+agno
+openai>=1.77.0
+arize-phoenix
+langtrace-python-sdk
+openinference-instrumentation-agno
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+atla-insights[openai]
+git+https://github.com/dolfies/discord.py-self.git@97e06c393f6e8f30d00fe0dd9cdf7196145fa851#egg=discord.py-self
+e2b_code_interpreter
+youtube_transcript_api
+python-dotenv>=1.0.0
+psycopg2-binary
+aiohttp
+serpapi
+play-lichess
+groq
+googlesearch-python
+pycountry
+wikipedia
+exa-py
+mcp
+pydantic
+uvicorn
+pytz>=2024.1
+asyncpg
+```
+
+<Warning>
+  The discord.py-self library is pinned to a specific commit (97e06c393f6e8f30d00fe0dd9cdf7196145fa851) that is known to work with Python 3.12. Do not modify this version.
+</Warning>
+
+### 3. Environment configuration
+
+Create a `.env` file in the root directory. Here are all available configuration options:
+
+#### Required configuration
+
+```bash .env
+# Discord token (required)
+DISCORD_TOKEN=your_discord_token_here
+```
+
+<Tip>
+  To get your Discord token, you'll need to access your Discord account's developer tools. Be aware that using selfbots may violate Discord's Terms of Service.
+</Tip>
+
+#### AI provider configuration
+
+```bash .env
+# Default provider is groq
+CUSTOM_PROVIDER=groq
+CUSTOM_MODEL=openai/gpt-oss-120b
+CUSTOM_PROVIDER_API_KEY=your_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
+FIRECRAWL_API_KEY=your_firecrawl_api_key_here
+```
+
+Configuration defaults from `core/config.py`:
+- **PROVIDER**: `"groq"` (default provider)
+- **MODEL_NAME**: `"openai/gpt-oss-120b"`
+- **MODEL_TEMPERATURE**: `0.3`
+- **MODEL_TOP_P**: `0.9`
+
+#### Database configuration
+
+```bash .env
+POSTGRES_URL=postgresql://user:password@host:port/database
+```
+
+#### Agent configuration
+
+```bash .env
+# Model parameters
+MODEL_TEMPERATURE=0.3
+MODEL_TOP_P=0.9
+
+# Agent behavior
+AGENT_HISTORY_RUNS=1
+AGENT_RETRIES=2
+MAX_AGENTS=100
+
+# Context agent settings
+CONTEXT_AGENT_MODEL=gemini-2.5-flash-lite
+CONTEXT_AGENT_MAX_MESSAGES=50000
+TEAM_LEADER_CONTEXT_LIMIT=100
+```
+
+#### Debugging and tracing
+
+```bash .env
+# Logging level
+LOG_LEVEL=INFO
+
+# Debug mode
+DEBUG_MODE=false
+DEBUG_LEVEL=1
+
+# Tracing (disabled by default)
+TRACING=false
+PHOENIX_API_KEY=your_phoenix_api_key
+PHOENIX_ENDPOINT=https://app.phoenix.arize.com/s/maanyapatel145/v1/traces
+PHOENIX_PROJECT_NAME=junkie
+```
+
+#### MCP configuration
+
+```bash .env
+MCP_URLS=your_mcp_urls_here
+```
+
+### 4. Verify installation
+
+Run the bot to verify everything is installed correctly:
+
+```bash
+python main.py
+```
+
+You should see logging output similar to:
+
+```
+2026-03-04 10:30:45 - discord - INFO - Logging in using static token
+[SELF-BOT] Logged in as YourUsername (ID: 123456789)
+```
+
+## Troubleshooting
+
+### Python version issues
+
+If you encounter errors related to discord.py-self, ensure you're using Python 3.12:
+
+```bash
+python3.12 --version
+python3.12 -m pip install -r requirements.txt
+python3.12 main.py
+```
+
+### Missing dependencies
+
+If you see import errors, try reinstalling dependencies:
+
+```bash
+pip install --upgrade -r requirements.txt
+```
+
+### Discord token issues
+
+If the bot fails to start with a token error:
+
+1. Verify your `.env` file exists in the root directory
+2. Check that `DISCORD_TOKEN` is set correctly
+3. Ensure there are no extra spaces or quotes around the token
+
+```python
+# This is how the token is loaded in main.py
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+token = os.getenv("DISCORD_TOKEN")
+```
+
+### Logging configuration
+
+To enable more detailed logging for troubleshooting:
+
+```bash .env
+LOG_LEVEL=DEBUG
+DEBUG_MODE=true
+DEBUG_LEVEL=2
+```
+
+The logging is configured in `main.py`:
+
+```python main.py
+import logging
+import os
+
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+```
+
+## Next steps
+
+Once installation is complete, proceed to the [Quickstart](/quickstart) guide to run your first commands.

@@ -1,122 +1,159 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Junkie",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#5865F2",
+    "light": "#7289DA",
+    "dark": "#404EED"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/maanya0/junkie"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/maanya0/junkie"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/architecture",
+              "concepts/team-system",
+              "concepts/agents",
+              "concepts/context-management"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Features",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "features/chat-handler",
+              "features/tldr-summaries",
+              "features/context-cache",
+              "features/backfill"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Configuration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "configuration/environment",
+              "configuration/database",
+              "configuration/models",
+              "configuration/tracing"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Tools & Integrations",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Built-in Tools",
             "pages": [
-              "api-reference/introduction"
+              "tools/e2b-sandbox",
+              "tools/history-tools",
+              "tools/bio-tools"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "External Integrations",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "tools/mcp-tools",
+              "tools/web-search",
+              "tools/code-execution"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Agents",
+        "groups": [
+          {
+            "group": "Agent System",
+            "pages": [
+              "agents/overview",
+              "agents/team-leader",
+              "agents/code-agent",
+              "agents/perplexity-agent",
+              "agents/context-qna-agent"
+            ]
+          },
+          {
+            "group": "Customization",
+            "pages": [
+              "agents/creating-agents",
+              "agents/system-prompts",
+              "agents/memory-management"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Modules",
+            "pages": [
+              "api/agent-factory",
+              "api/chat-handler",
+              "api/selfbot",
+              "api/config"
+            ]
+          },
+          {
+            "group": "Database",
+            "pages": [
+              "api/database",
+              "api/execution-context"
+            ]
+          },
+          {
+            "group": "Tools API",
+            "pages": [
+              "api/tools/e2b-toolkit",
+              "api/tools/history-tools",
+              "api/tools/bio-tools",
+              "api/tools/tools-factory"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Deployment",
+        "groups": [
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/docker",
+              "deployment/railway",
+              "deployment/environment-setup"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "deployment/monitoring",
+              "deployment/troubleshooting"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

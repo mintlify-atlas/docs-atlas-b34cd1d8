@@ -1,0 +1,162 @@
+---
+title: Chat Handler
+description: Functions for processing chat messages and managing bot lifecycle
+---
+
+The Chat Handler module provides the main interface for processing chat messages and managing the Discord bot lifecycle.
+
+## async_ask_junkie
+
+Run the user's AI team with a query.
+
+```python
+async def async_ask_junkie(
+    user_text: str,
+    user_id: str,
+    session_id: str,
+    images: list = None,
+    client=None
+) -> str
+```
+
+<ParamField path="user_text" type="str" required>
+  User input text or prompt
+</ParamField>
+
+<ParamField path="user_id" type="str" required>
+  Discord user ID
+</ParamField>
+
+<ParamField path="session_id" type="str" required>
+  Session ID (typically channel ID)
+</ParamField>
+
+<ParamField path="images" type="list" default="None">
+  List of Image objects for vision capabilities
+</ParamField>
+
+<ParamField path="client" type="discord.Client" default="None">
+  Discord client instance
+</ParamField>
+
+<ResponseField name="return" type="str">
+  AI-generated response text
+</ResponseField>
+
+### Example
+
+```python
+from discord_bot.chat_handler import async_ask_junkie
+from agno.media import Image
+
+images = [Image(url="https://example.com/image.png")]
+response = await async_ask_junkie(
+    user_text="What's in this image?",
+    user_id="123456789",
+    session_id="channel_123",
+    images=images
+)
+```
+
+## setup_chat
+
+Setup chat event handlers for the Discord bot.
+
+```python
+def setup_chat(bot)
+```
+
+<ParamField path="bot" type="SelfBot" required>
+  SelfBot instance to configure
+</ParamField>
+
+### Registered Events
+
+This function registers the following Discord event handlers:
+
+#### on_ready
+- Initializes database connection
+- Connects MCP tools
+- Starts message backfill task
+- Syncs offline edits/deletes
+
+#### on_message
+- Handles chatbot prefix (`!`) messages
+- Builds context from recent chat history
+- Processes images from messages and replies
+- Sets execution context for tools
+- Generates and sends AI responses
+
+#### on_message_edit
+- Updates message cache when messages are edited
+
+#### on_message_delete
+- Updates message cache when messages are deleted
+
+#### on_disconnect
+- Closes database connections gracefully
+
+### Example
+
+```python
+from discord_bot.selfbot import SelfBot
+from discord_bot.chat_handler import setup_chat
+
+bot = SelfBot(token="...", prefix="!")
+setup_chat(bot)
+bot.run()
+```
+
+## main_cli
+
+CLI entrypoint for running Junkie in terminal mode.
+
+```python
+async def main_cli()
+```
+
+### Behavior
+
+- Creates a team for default CLI user
+- Runs interactive CLI if terminal is available
+- Gracefully closes MCP tools on exit
+- Skips CLI app in non-interactive environments
+
+### Example
+
+```python
+import asyncio
+from discord_bot.chat_handler import main_cli
+
+asyncio.run(main_cli())
+```
+
+## Message Processing Flow
+
+1. **Message received** → Cache updated
+2. **Prefix detected** (`!`) → Extract prompt
+3. **Mentions resolved** → Convert to readable format
+4. **Context built** → Include recent messages (default: 100)
+5. **Reply context** → Include replied message if present
+6. **Images extracted** → From message and reply
+7. **Execution context set** → Channel ID and object
+8. **AI team invoked** → Generate response
+9. **Mentions restored** → Convert back to Discord format
+10. **Response sent** → With timing information
+
+## Context Building
+
+The chat handler builds context-aware prompts by:
+
+- Retrieving recent messages from cache (limit: `TEAM_LEADER_CONTEXT_LIMIT`)
+- Including replied message for conversation threading
+- Resolving user mentions to readable names
+- Attaching image URLs from messages and replies
+- Formatting with timestamps and user information
+
+## Error Handling
+
+- Invalid responses → Returns fallback error message
+- Team failures → Logs error and sends truncated error to user
+- Backfill failures → Logs error but doesn't block bot startup
+- MCP connection failures → Logs warning and continues

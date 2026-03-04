@@ -1,0 +1,204 @@
+---
+title: Perplexity Sonar Pro Agent
+description: Real-time web research and information retrieval
+---
+
+## Overview
+
+The **Perplexity Sonar Pro Agent** provides real-time, source-backed information from the live web. It specializes in research, news, competitive analysis, and fact verification.
+
+## Initialization
+
+```python
+# agent/agent_factory.py:234-245
+perplexity_agent = Agent(
+    id="pplx-agent",
+    name="Perplexity Sonar Pro",
+    model=OpenAILike(
+        id="sonar-pro",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY
+    ),
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+)
+```
+
+## Model Configuration
+
+Uses Perplexity's Sonar Pro model through OpenAI-compatible API:
+
+```python
+model=OpenAILike(
+    id="sonar-pro",
+    base_url=PROVIDER,
+    api_key=CUSTOM_PROVIDER_API_KEY
+)
+```
+
+### Model Capabilities
+
+- **Real-time web access**: Searches current web content
+- **Source attribution**: Returns sources for all claims
+- **Contextual understanding**: Uses current date/time for relevance
+- **Multi-source verification**: Cross-references information
+
+## Use Cases
+
+The Perplexity Agent is delegated tasks involving:
+
+### 1. Deep Research
+
+From `system_prompt.md:79`:
+
+> **Deep research / real-time web data / complex analysis** → delegate to `pplx-agent`.
+
+- Comprehensive topic analysis
+- Multi-source research
+- Competitive analysis
+- Detailed investigations
+
+### 2. Real-Time Information
+
+- Current events and news
+- Market data and trends
+- Live updates
+- Breaking information
+
+### 3. Fact Verification
+
+From `system_prompt.md:93-99`:
+
+```markdown
+## Accuracy, verification & citations (CRITICAL)
+
+* **Always verify facts**, statistics, time-sensitive claims, and numbers using web/search tools or data connectors before presenting them as truth.
+* Cross-check high-impact claims with at least two reputable sources.
+* Cite sources succinctly (one-line attribution or clickable link if supported). Use credibility indicators (site reputation, publication date) when relevant.
+* If information cannot be verified, state uncertainty: "I couldn't verify X; here's what I found…".
+```
+
+The agent excels at:
+- Verifying statistics and numbers
+- Cross-checking claims
+- Providing source citations
+- Assessing information credibility
+
+### 4. Complex Analysis
+
+- Comparative studies
+- Trend analysis
+- Expert opinion gathering
+- Technical research
+
+## Tools
+
+The Perplexity Agent **does not have explicit tools** - its capabilities come from the Sonar Pro model's native web access:
+
+```python
+tools=None  # Implicit - no tools defined
+```
+
+The model inherently:
+- Searches the web
+- Retrieves sources
+- Analyzes content
+- Generates citations
+
+## Context Awareness
+
+```python
+add_datetime_to_context=True,
+timezone_identifier="Asia/Kolkata",
+```
+
+The agent receives:
+- Current date and time (IST)
+- Message timestamps
+- Temporal context for queries
+
+This enables:
+- Time-sensitive searches ("today's news")
+- Date-aware research ("recent developments")
+- Historical context ("what happened yesterday")
+
+## Configuration
+
+Environment variables:
+
+```bash
+# Provider endpoint (must support Perplexity models)
+PROVIDER=https://your-openai-compatible-endpoint
+
+# API key with Perplexity access
+CUSTOM_PROVIDER_API_KEY=your_api_key
+```
+
+## Delegation Strategy
+
+### When to Use Perplexity Agent
+
+✅ **Use for:**
+- Web research and information gathering
+- Current events and news
+- Fact verification
+- Source-backed answers
+- Competitive analysis
+
+❌ **Do NOT use for:**
+- Code execution (use Code Agent or Groq Compound)
+- Chat history analysis (use Context Q&A Agent)
+- Math calculations (use Team Leader's CalculatorTools)
+
+### Fallback Behavior
+
+From `system_prompt.md:87-89`:
+
+> If the chosen agent is unavailable or fails, attempt one fallback (next appropriate agent) before returning a best-effort partial answer.
+
+If Perplexity Agent fails:
+1. Try Code Agent with ExaTools for web search
+2. Return best-effort answer with uncertainty disclaimer
+
+## Response Guidelines
+
+The agent follows these citation standards:
+
+```markdown
+* Cite sources succinctly (one-line attribution or clickable link if supported)
+* Use credibility indicators (site reputation, publication date) when relevant
+* If information cannot be verified, state uncertainty: "I couldn't verify X; here's what I found…"
+```
+
+## Example Queries
+
+**Good delegation to Perplexity:**
+- "What are the latest developments in AI regulation?"
+- "Compare the top 5 CRM platforms for startups"
+- "What's the current status of the XYZ merger?"
+- "Find research papers on quantum computing from 2024"
+
+**Better handled by other agents:**
+- "Calculate the ROI for this investment" → Team Leader (CalculatorTools)
+- "Run this Python script" → Code Agent or Groq Compound
+- "What did I say about this topic last week?" → Context Q&A Agent
+
+## Performance Characteristics
+
+- **Speed**: Moderate (web search adds latency)
+- **Accuracy**: High (source-backed)
+- **Cost**: Higher (Sonar Pro is premium)
+- **Token usage**: Variable (depends on sources)
+
+## Best Practices
+
+1. **Clear queries**: Specific questions get better results
+2. **Time bounds**: Specify date ranges when relevant
+3. **Source requirements**: Request specific source types if needed
+4. **Verification level**: Indicate if high-confidence sources are required
+
+## Next Steps
+
+- [Code Agent](/agents/code-agent) - For code execution
+- [Context Q&A Agent](/agents/context-qna-agent) - For chat history
+- [Creating Custom Agents](/agents/creating-agents)

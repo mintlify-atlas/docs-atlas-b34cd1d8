@@ -1,0 +1,404 @@
+---
+title: Bio Tools
+description: Fetch Discord user details and avatars for context-aware responses
+---
+
+The `BioTools` class provides agents with the ability to fetch detailed information about Discord users, including profiles, avatars, roles, and activity status.
+
+## Overview
+
+BioTools enables agents to:
+
+- Fetch user profiles with detailed metadata
+- Retrieve user avatars for analysis
+- Access guild-specific information (roles, status, join date)
+- Work in both guild channels and DM channels
+- Get user bios, banners, and custom statuses
+
+## Installation
+
+BioTools is part of the core Junkie toolkit:
+
+```python
+from tools.bio_tools import BioTools
+```
+
+**Dependencies**:
+- `agno.tools.Toolkit`
+- `agno.tools.function.ToolResult`
+- `agno.media.Image`
+- `core.execution_context`
+- `discord.py`
+
+## BioTools Class
+
+### Initialization
+
+```python
+from tools.bio_tools import BioTools
+import discord
+
+# With Discord client (recommended)
+bio_tools = BioTools(client=discord_client)
+
+# Without client (will attempt to fetch from context)
+bio_tools = BioTools()
+```
+
+<ParamField path="client" type="discord.Client" default="None">
+  Discord client instance. If None, will attempt to extract from execution context.
+</ParamField>
+
+### Methods
+
+#### get_user_details()
+
+Fetches comprehensive details for a Discord user by their ID.
+
+```python
+details = await bio_tools.get_user_details(user_id=123456789)
+print(details)
+```
+
+<ParamField path="user_id" type="int" required>
+  The Discord user ID to fetch details for.
+</ParamField>
+
+**Returns**: `str` - A formatted string containing user details, or an error message.
+
+**Example Output**:
+```
+User Details for ID: 123456789
+Username: JohnDoe
+Display Name: John Doe
+Bot: False
+Created At: 2020-01-15 12:30:00
+Avatar URL: https://cdn.discordapp.com/avatars/...
+Joined Server: 2021-05-20 08:15:00
+Server Nickname: Johnny
+Roles: Admin, Developer, Community
+Status: online
+Desktop Status: Online
+Activities:
+  - Playing: Minecraft
+  - Custom Status: Working on cool stuff 🚀
+Banner URL: https://cdn.discordapp.com/banners/...
+Accent Color: #5865F2
+Bio: Full-stack developer and Discord enthusiast
+```
+
+#### get_user_avatar()
+
+Fetches the avatar of a Discord user and returns it as an image for analysis.
+
+```python
+result = await bio_tools.get_user_avatar(user_id=123456789)
+
+if result.images:
+    image = result.images[0]
+    print(f"Avatar URL: {image.url}")
+    print(f"Image ID: {image.id}")
+```
+
+<ParamField path="user_id" type="int" required>
+  The Discord user ID to fetch the avatar for.
+</ParamField>
+
+**Returns**: `ToolResult` - Contains the user's avatar image if found, or an error message.
+
+**ToolResult Fields**:
+- `content` (str): Description or error message
+- `images` (list): List of `Image` objects containing the avatar
+
+## User Information Fields
+
+### Basic User Details (All Contexts)
+
+Available for both guild and DM channels:
+
+- **User ID**: Discord snowflake identifier
+- **Username**: User's Discord username
+- **Display Name**: User's current display name
+- **Bot**: Whether the user is a bot account
+- **Created At**: Account creation timestamp
+- **Avatar URL**: URL to user's avatar (or default avatar)
+
+### Guild-Specific Details
+
+Only available when queried from a guild channel:
+
+- **Joined Server**: Server join timestamp
+- **Server Nickname**: Custom nickname in the guild
+- **Roles**: List of roles (excluding @everyone)
+- **Status**: Online/offline/idle/dnd status
+- **Mobile/Desktop/Web Status**: Platform-specific presence
+- **Activities**: Current activities (games, streaming, custom status)
+
+### Full Profile Details
+
+Fetched via additional API call (works in all contexts):
+
+- **Banner URL**: User's profile banner
+- **Accent Color**: Profile accent color
+- **Bio**: User's profile bio/about me section
+
+## Implementation Details
+
+### Client Resolution
+
+BioTools uses a priority system to obtain the Discord client:
+
+```python
+def _get_discord_client(self, channel=None) -> Optional[discord.Client]:
+    # Priority 1: Use injected client
+    if self.client:
+        return self.client
+    
+    # Priority 2: Get from channel state (works for DMs)
+    if channel and hasattr(channel, '_state'):
+        client = channel._state._get_client()
+        if client:
+            return client
+    
+    # Priority 3: Get from guild (guild channels only)
+    if channel:
+        guild = getattr(channel, 'guild', None)
+        if guild and hasattr(guild, '_state'):
+            client = guild._state._get_client()
+            if client:
+                return client
+    
+    return None
+```
+
+### User Fetching Strategy
+
+BioTools attempts multiple strategies to fetch user data:
+
+```python
+async def _fetch_user(self, user_id: int, channel=None):
+    # For guild channels: Try to get Member (includes roles, status)
+    if guild and not is_dm:
+        member = guild.get_member(user_id)  # Cache first
+        if not member:
+            member = await guild.fetch_member(user_id)  # API fallback
+        if member:
+            return member
+    
+    # Fallback: Fetch User globally (works for both contexts)
+    user = await client.fetch_user(user_id)
+    return user
+```
+
+### Activity Parsing
+
+BioTools parses various Discord activity types:
+
+```python
+for activity in user.activities:
+    if isinstance(activity, discord.CustomActivity):
+        # Custom Status: Working on cool stuff 🚀
+    elif isinstance(activity, discord.Spotify):
+        # Listening to Spotify: Song Name by Artist
+    elif isinstance(activity, discord.Game):
+        # Playing: Minecraft
+    elif isinstance(activity, discord.Streaming):
+        # Streaming: Live Coding (https://twitch.tv/...)
+```
+
+## Agent Integration
+
+### Context Q&A Agent
+
+From `agent_factory.py:264-290`:
+
+```python
+from tools.history_tools import HistoryTools
+from tools.bio_tools import BioTools
+
+context_qna_agent = Agent(
+    id="context-qna-agent",
+    name="Chat Context Q&A",
+    role="Answering questions about users, topics, and past conversations",
+    model=OpenAILike(
+        id=CONTEXT_AGENT_MODEL,
+        max_tokens=8000,
+        temperature=0.3,
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY,
+    ),
+    tools=[HistoryTools(), BioTools(client=client)],
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+    instructions="""
+    You specialize in answering questions about chat history, users, and topics.
+    
+    Use `get_user_details` to fetch user information.
+    Use `read_chat_history` to get conversation context.
+    
+    Be precise with timestamps and attribute statements accurately.
+    """
+)
+```
+
+### Team Leader Integration
+
+From `agent_factory.py:310-327`:
+
+```python
+team = Team(
+    name="Hero Team",
+    model=model,
+    db=db,
+    members=agents,
+    tools=[BioTools(client=client), CalculatorTools()],
+    instructions=get_prompt(),
+    num_history_runs=AGENT_HISTORY_RUNS,
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+    markdown=True,
+    retries=AGENT_RETRIES,
+    debug_mode=DEBUG_MODE,
+)
+```
+
+## Usage Examples
+
+### Fetch User Profile
+
+```python
+from tools.bio_tools import BioTools
+
+bio_tools = BioTools(client=discord_client)
+
+# Get detailed user information
+details = await bio_tools.get_user_details(user_id=123456789)
+print(details)
+```
+
+### Get User Avatar
+
+```python
+from tools.bio_tools import BioTools
+
+bio_tools = BioTools(client=discord_client)
+
+# Fetch avatar as Image object
+result = await bio_tools.get_user_avatar(user_id=123456789)
+
+if result.images:
+    avatar = result.images[0]
+    print(f"Avatar: {avatar.url}")
+    print(f"Prompt: {avatar.original_prompt}")
+```
+
+### Combined with History Tools
+
+```python
+from tools.bio_tools import BioTools
+from tools.history_tools import HistoryTools
+
+# Create agent with both tools
+agent = Agent(
+    name="User Context Agent",
+    model=my_model,
+    tools=[BioTools(client=client), HistoryTools()],
+    instructions="""
+    Use get_user_details to learn about users.
+    Use read_chat_history to understand conversation context.
+    Combine both to provide comprehensive answers.
+    """
+)
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Client Injection">
+    - Always inject Discord client when initializing BioTools
+    - Ensures consistent behavior across guild and DM contexts
+    - Fallback extraction may not work in all scenarios
+    - Example: `BioTools(client=discord_client)`
+  </Accordion>
+
+  <Accordion title="Guild vs DM Context">
+    - Guild channels: Full member details (roles, status, activities)
+    - DM channels: Basic user details only
+    - Full profile (banner, bio) works in both contexts
+    - Check `isinstance(user, discord.Member)` for guild-specific data
+  </Accordion>
+
+  <Accordion title="Error Handling">
+    - Always check for execution context before calling
+    - Handle "User not found" gracefully
+    - Log errors with stack traces for debugging
+    - Provide context-specific error messages (guild vs DM)
+  </Accordion>
+
+  <Accordion title="Performance">
+    - Cache hits (`get_member`) are faster than API calls
+    - `fetch_member` and `fetch_user` hit Discord API
+    - Full profile fetch requires additional API call
+    - Consider rate limits for bulk user lookups
+  </Accordion>
+</AccordionGroup>
+
+## Common Use Cases
+
+### User Profile Lookup
+
+```python
+# "Tell me about @JohnDoe"
+# Agent calls get_user_details(user_id)
+# Returns comprehensive profile information
+```
+
+### Avatar Analysis
+
+```python
+# "What does Alice's avatar look like?"
+# Agent calls get_user_avatar(user_id)
+# Returns Image object for vision model analysis
+```
+
+### Role Verification
+
+```python
+# "What roles does Bob have?"
+# Agent calls get_user_details(user_id)
+# Extracts and returns role list
+```
+
+### Activity Tracking
+
+```python
+# "Is Charlie online?"
+# Agent calls get_user_details(user_id)
+# Returns status and platform presence
+```
+
+## Logging
+
+BioTools uses Python's logging module:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Log levels used:
+logger.debug(f"Could not get client from channel state: {e}")
+logger.warning(f"Could not fetch full user profile: {e}")
+logger.error(f"Error getting user details: {e}", exc_info=True)
+```
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="History Tools" icon="clock-rotate-left" href="/tools/history-tools">
+    Access Discord chat history
+  </Card>
+  <Card title="Execution Context" icon="layer-group" href="/architecture/execution-context">
+    Learn about execution context management
+  </Card>
+</CardGroup>

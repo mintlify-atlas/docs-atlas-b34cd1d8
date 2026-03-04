@@ -1,0 +1,220 @@
+---
+title: Database Setup
+description: PostgreSQL configuration and schema for Junkie
+---
+
+Junkie uses PostgreSQL for storing message history, agent sessions, and user memories.
+
+## Connection Configuration
+
+### Database URL Format
+
+Set the `POSTGRES_URL` environment variable with your PostgreSQL connection string:
+
+```bash
+POSTGRES_URL=postgresql://username:password@host:port/database
+```
+
+**Connection URL Components:**
+- `username`: PostgreSQL user
+- `password`: User password
+- `host`: Database server hostname (e.g., `localhost`, `db.example.com`)
+- `port`: PostgreSQL port (default: `5432`)
+- `database`: Database name
+
+### Example Configurations
+
+<CodeGroup>
+```bash Local Development
+POSTGRES_URL=postgresql://postgres:password@localhost:5432/junkie
+```
+
+```bash Production
+POSTGRES_URL=postgresql://junkie_user:secure_pass@prod-db.example.com:5432/junkie_prod
+```
+
+```bash With SSL
+POSTGRES_URL=postgresql://user:pass@host:5432/db?sslmode=require
+```
+</CodeGroup>
+
+## Async Driver Setup
+
+Junkie automatically converts standard PostgreSQL URLs to use the `asyncpg` driver for better performance:
+
+```python
+# Original URL
+postgresql://user:pass@host:5432/db
+
+# Automatically converted to
+postgresql+asyncpg://user:pass@host:5432/db
+```
+
+This conversion happens in `agent/agent_factory.py:60-81` and provides better throughput for async operations.
+
+<Info>
+If your `POSTGRES_URL` already includes `+asyncpg` or `+psycopg_async`, the URL will be used as-is.
+</Info>
+
+## Database Schema
+
+Junkie creates and manages three types of tables:
+
+### 1. Messages Table
+
+Stores Discord message history for context retrieval.
+
+```sql
+CREATE TABLE IF NOT EXISTS messages (
+    message_id BIGINT PRIMARY KEY,
+    channel_id BIGINT NOT NULL,
+    author_id BIGINT NOT NULL,
+    author_name TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    timestamp_str TEXT NOT NULL
+);
+```
+
+**Indexes:**
+```sql
+-- Optimized for fetching recent messages (DESC order)
+CREATE INDEX idx_messages_channel_created
+ON messages (channel_id, created_at DESC);
+
+-- Fast message_id lookups for upserts
+CREATE INDEX idx_messages_message_id
+ON messages (message_id);
+```
+
+**Fields:**
+- `message_id`: Unique Discord message ID
+- `channel_id`: Discord channel where message was sent
+- `author_id`: Discord user ID of author
+- `author_name`: Display name of author
+- `content`: Message text content
+- `created_at`: Timestamp with timezone
+- `timestamp_str`: Human-readable timestamp string
+
+### 2. Channel Status Table
+
+Tracks backfill completion status for channels.
+
+```sql
+CREATE TABLE IF NOT EXISTS channel_status (
+    channel_id BIGINT PRIMARY KEY,
+    is_fully_backfilled BOOLEAN DEFAULT FALSE,
+    last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Fields:**
+- `channel_id`: Discord channel ID
+- `is_fully_backfilled`: Whether all historical messages have been loaded
+- `last_updated`: Last update timestamp
+
+### 3. Agent Tables (Managed by Agno)
+
+Additional tables are created automatically by the Agno framework:
+
+- `agent_sessions`: Stores conversation history and session state
+- `user_memories`: Stores user-specific memories for personalization
+
+These are configured in `agent/agent_factory.py:89-93`:
+
+```python
+db = AsyncPostgresDb(
+    db_url=async_db_url,
+    session_table="agent_sessions",
+    memory_table="user_memories",
+)
+```
+
+## Database Operations
+
+### Initialization
+
+The database connection pool is initialized on bot startup:
+
+```python
+import asyncpg
+from core.config import POSTGRES_URL
+
+pool = await asyncpg.create_pool(POSTGRES_URL)
+await create_schema()  # Creates tables if they don't exist
+```
+
+Reference: `core/database.py:11-20`
+
+### Connection Pool
+
+Junkie uses `asyncpg` connection pooling for efficient database access:
+
+- Pool is created once at startup
+- Connections are acquired from pool for each operation
+- Automatic connection management and cleanup
+
+### Message Storage
+
+Messages are stored with upsert logic (insert or update if exists):
+
+```python
+await store_message(
+    message_id=123456789,
+    channel_id=987654321,
+    author_id=111111111,
+    author_name="User",
+    content="Hello world",
+    created_at=datetime.now(),
+    timestamp_str="2024-01-15 10:30:00"
+)
+```
+
+Reference: `core/database.py:66-90`
+
+## Performance Optimizations
+
+### Indexes
+
+- **Descending index** on `(channel_id, created_at DESC)` for fast retrieval of recent messages
+- **Primary key index** on `message_id` for fast upserts
+
+### Query Patterns
+
+Messages are fetched in reverse chronological order, then reversed for display:
+
+```python
+# Fetch newest messages first (uses DESC index)
+SELECT * FROM messages
+WHERE channel_id = $1
+ORDER BY created_at DESC
+LIMIT 2000
+
+# Then reverse to chronological order in Python
+return list(reversed(messages))
+```
+
+Reference: `core/database.py:106-126`
+
+## No Database Mode
+
+If `POSTGRES_URL` is not configured:
+
+- Message history will not be stored
+- Agent sessions will not persist between restarts
+- User memories will be lost
+- The bot will still function but without persistence
+
+<Warning>
+Without a database, conversation context and user memories are lost when the bot restarts.
+</Warning>
+
+## Cleanup
+
+Close the connection pool gracefully on shutdown:
+
+```python
+await close_db()
+```
+
+Reference: `core/database.py:22-28`

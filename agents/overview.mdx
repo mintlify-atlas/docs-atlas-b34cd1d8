@@ -1,0 +1,127 @@
+---
+title: Agent System Overview
+description: Understanding Junkie's multi-agent architecture and how agents work together
+---
+
+## Architecture
+
+Junkie uses a **multi-agent team architecture** built on the Agno framework. The system consists of:
+
+- **Team Leader**: Orchestrates task delegation and manages the overall conversation flow
+- **Specialized Agents**: Handle specific domains (code execution, research, context analysis)
+- **Shared Resources**: Database, memory manager, and observability infrastructure
+
+## How Agents Work Together
+
+The team operates with a delegation hierarchy:
+
+```python
+# agent/agent_factory.py:310
+team = Team(
+    name="Hero Team",
+    model=model,
+    db=db,
+    members=agents,  # Specialized agents
+    tools=[BioTools(client=client), CalculatorTools()],
+    instructions=get_prompt(),
+    memory_manager=memory_manager,
+)
+```
+
+### Delegation Flow
+
+1. User sends message to Discord
+2. Team Leader receives the message and analyzes the task
+3. Leader delegates to the most appropriate specialist:
+   - **Deep research / real-time data** → Perplexity Agent
+   - **Quick code execution / math** → Groq Compound Agent  
+   - **Complex code / sandbox operations** → Code Agent
+   - **Chat history analysis** → Context Q&A Agent
+4. Specialist executes the task using its tools
+5. Leader integrates results and responds to user
+
+## Agent Lifecycle
+
+### Team Creation
+
+Teams are created per-user with LRU caching:
+
+```python
+# agent/agent_factory.py:358
+async def get_or_create_team(user_id: str, client=None):
+    """Get existing team for a user or create a new one."""
+    # Check cache
+    if user_id in _user_teams:
+        _user_teams.move_to_end(user_id)  # Mark as recently used
+        return _user_teams[user_id]
+    
+    # Evict oldest if cache full
+    if len(_user_teams) >= MAX_AGENTS:
+        oldest_user, oldest_team = _user_teams.popitem(last=False)
+        # Cleanup resources...
+```
+
+### Resource Cleanup
+
+When teams are evicted from cache:
+- MCP connections are closed
+- Team-level resources are cleaned up
+- Per-user locks are removed
+
+## Shared Infrastructure
+
+### Database (PostgreSQL)
+
+```python
+# agent/agent_factory.py:87-93
+db = AsyncPostgresDb(
+    db_url=async_db_url,
+    session_table="agent_sessions",  # Session/history storage
+    memory_table="user_memories",    # User memory storage
+)
+```
+
+### Memory Manager
+
+```python
+# agent/agent_factory.py:153-161
+memory_model = OpenAILike(
+    id="openai/gpt-oss-120b",
+    base_url="https://api.groq.com/openai/v1",
+    api_key=GROQ_API_KEY,
+)
+memory_manager = MemoryManager(
+    model=memory_model,
+    db=db,
+)
+```
+
+The memory manager uses Groq's fast model for efficient memory processing and stores user memories in PostgreSQL.
+
+### Observability (Phoenix)
+
+```python
+# agent/agent_factory.py:36-44
+client = Client()  # Phoenix client
+setup_phoenix_tracing()
+```
+
+All agent interactions are traced through Phoenix for monitoring and debugging.
+
+## Configuration
+
+Key environment variables:
+
+- `MAX_AGENTS`: Maximum number of cached teams (LRU eviction)
+- `AGENT_HISTORY_RUNS`: Number of history runs to keep
+- `AGENT_RETRIES`: Number of retries for failed operations
+- `DEBUG_MODE`, `DEBUG_LEVEL`: Debugging configuration
+- `CONTEXT_AGENT_MODEL`: Model for context Q&A agent
+- `POSTGRES_URL`: Database connection URL
+
+## Next Steps
+
+- [Team Leader Configuration](/agents/team-leader)
+- [Creating Custom Agents](/agents/creating-agents)
+- [System Prompts](/agents/system-prompts)
+- [Memory Management](/agents/memory-management)

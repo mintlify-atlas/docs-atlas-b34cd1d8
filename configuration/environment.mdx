@@ -1,0 +1,149 @@
+---
+title: Environment Variables
+description: Complete reference for all environment variables in Junkie
+---
+
+Junkie uses environment variables for configuration. All settings can be configured through a `.env` file in the root directory.
+
+## Database Configuration
+
+<ParamField path="POSTGRES_URL" type="string" default="">
+  PostgreSQL connection URL for message history, agent sessions, and memory storage.
+  
+  Format: `postgresql://username:password@host:port/database`
+  
+  If not set, sessions and memories will not persist across restarts.
+</ParamField>
+
+## Model Provider Configuration
+
+<ParamField path="CUSTOM_PROVIDER" type="string" default="groq">
+  The LLM provider to use for the main agent model. Can be:
+  - `groq` - Uses Groq's API
+  - Any OpenAI-compatible base URL (e.g., `https://api.openai.com/v1`)
+</ParamField>
+
+<ParamField path="CUSTOM_MODEL" type="string" default="openai/gpt-oss-120b">
+  Model identifier for the main agent. Examples:
+  - `openai/gpt-oss-120b` (Groq)
+  - `gpt-4-turbo`
+  - `gpt-5`
+</ParamField>
+
+<ParamField path="CUSTOM_PROVIDER_API_KEY" type="string" default="None">
+  API key for custom provider. Required when using a custom OpenAI-compatible endpoint.
+</ParamField>
+
+<ParamField path="GROQ_API_KEY" type="string" default="" required>
+  API key for Groq. Required for:
+  - Using Groq as the main provider
+  - Memory processing (uses `openai/gpt-oss-120b`)
+  - Groq Compound agent
+</ParamField>
+
+## External Service API Keys
+
+<ParamField path="FIRECRAWL_API_KEY" type="string" default="">
+  API key for Firecrawl web scraping service. When set, enables the Firecrawl MCP server for the code agent.
+</ParamField>
+
+## Agent Configuration
+
+<ParamField path="MODEL_TEMPERATURE" type="float" default="0.3">
+  Controls randomness in model outputs. Range: 0.0 to 2.0
+  - Lower values (0.1-0.3): More focused and deterministic
+  - Higher values (0.7-1.0): More creative and varied
+</ParamField>
+
+<ParamField path="MODEL_TOP_P" type="float" default="0.9">
+  Nucleus sampling parameter. Alternative to temperature. Range: 0.0 to 1.0
+</ParamField>
+
+<ParamField path="AGENT_HISTORY_RUNS" type="integer" default="1">
+  Number of previous conversation runs to include in agent context.
+</ParamField>
+
+<ParamField path="AGENT_RETRIES" type="integer" default="2">
+  Number of times to retry failed agent operations.
+</ParamField>
+
+<ParamField path="MAX_AGENTS" type="integer" default="100">
+  Maximum number of user teams to cache in memory. Uses LRU eviction when limit is reached.
+</ParamField>
+
+## Debug Configuration
+
+<ParamField path="DEBUG_MODE" type="boolean" default="false">
+  Enable verbose debug logging for agent operations. Set to `true` to activate.
+</ParamField>
+
+<ParamField path="DEBUG_LEVEL" type="integer" default="1">
+  Debug verbosity level when `DEBUG_MODE` is enabled.
+  - `1`: Basic debug info
+  - Higher values: More detailed logging
+</ParamField>
+
+## Tracing Configuration
+
+<ParamField path="TRACING" type="boolean" default="false">
+  Enable Phoenix/Arize tracing for observability. Set to `true` to activate.
+</ParamField>
+
+<ParamField path="PHOENIX_API_KEY" type="string" default="None">
+  API key for Phoenix/Arize. Required when `TRACING=true`.
+</ParamField>
+
+<ParamField path="PHOENIX_ENDPOINT" type="string" default="https://app.phoenix.arize.com/s/maanyapatel145/v1/traces">
+  Phoenix trace collection endpoint URL.
+</ParamField>
+
+<ParamField path="PHOENIX_PROJECT_NAME" type="string" default="junkie">
+  Project name for organizing traces in Phoenix.
+</ParamField>
+
+## MCP Configuration
+
+<ParamField path="MCP_URLS" type="string" default="">
+  Comma-separated list of MCP server URLs to enable additional tools.
+  
+  Example: `https://mcp.example.com/v1,https://another-mcp.com/api`
+</ParamField>
+
+## Context Agent Configuration
+
+<ParamField path="CONTEXT_AGENT_MODEL" type="string" default="gemini-2.5-flash-lite">
+  Model for the Chat Context Q&A agent. Should be a fast, long-context model.
+</ParamField>
+
+<ParamField path="CONTEXT_AGENT_MAX_MESSAGES" type="integer" default="50000">
+  Maximum number of messages the context agent can process.
+</ParamField>
+
+<ParamField path="TEAM_LEADER_CONTEXT_LIMIT" type="integer" default="100">
+  Context window limit for the team leader agent.
+</ParamField>
+
+## Example .env File
+
+```bash
+# Database
+POSTGRES_URL=postgresql://user:password@localhost:5432/junkie
+
+# Model Configuration
+CUSTOM_PROVIDER=https://api.openai.com/v1
+CUSTOM_MODEL=gpt-5
+CUSTOM_PROVIDER_API_KEY=sk-...
+GROQ_API_KEY=gsk_...
+
+# Agent Settings
+MODEL_TEMPERATURE=0.3
+MAX_AGENTS=100
+
+# Tracing
+TRACING=true
+PHOENIX_API_KEY=your-phoenix-key
+PHOENIX_PROJECT_NAME=my-junkie-instance
+
+# Debug
+DEBUG_MODE=false
+```

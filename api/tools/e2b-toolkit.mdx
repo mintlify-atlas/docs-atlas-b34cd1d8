@@ -1,0 +1,494 @@
+---
+title: E2B Toolkit
+description: Production-grade E2B sandbox management and code execution
+---
+
+The E2B Toolkit provides comprehensive sandbox management, code execution, file operations, and server hosting capabilities.
+
+## SandboxManager
+
+Manages E2B sandbox lifecycle operations.
+
+```python
+class SandboxManager:
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        default_timeout: int = 300,
+        default_options: Optional[Dict] = None
+    )
+```
+
+<ParamField path="api_key" type="str" default="None">
+  E2B API key (falls back to `E2B_API_KEY` environment variable)
+</ParamField>
+
+<ParamField path="default_timeout" type="int" default="300">
+  Default sandbox timeout in seconds
+</ParamField>
+
+<ParamField path="default_options" type="dict" default="None">
+  Additional options for sandbox creation
+</ParamField>
+
+### create
+
+Create a new sandbox.
+
+```python
+def create(
+    self,
+    timeout: Optional[int] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> SandboxSlot
+```
+
+<ParamField path="timeout" type="int" default="None">
+  Sandbox timeout in seconds (uses default if not specified)
+</ParamField>
+
+<ParamField path="metadata" type="dict" default="None">
+  Custom metadata to attach to sandbox
+</ParamField>
+
+<ResponseField name="return" type="SandboxSlot">
+  Wrapper containing sandbox instance and metadata
+</ResponseField>
+
+### connect
+
+Connect to an existing sandbox.
+
+```python
+def connect(self, sandbox_id: str) -> SandboxSlot
+```
+
+<ParamField path="sandbox_id" type="str" required>
+  ID of existing sandbox to connect to
+</ParamField>
+
+<ResponseField name="return" type="SandboxSlot">
+  Connected sandbox wrapper
+</ResponseField>
+
+### shutdown
+
+Shutdown a sandbox and clean up resources.
+
+```python
+def shutdown(self, sandbox_id: str) -> Dict[str, Any]
+```
+
+<ParamField path="sandbox_id" type="str" required>
+  ID of sandbox to shutdown
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Status dict with "status", "sandbox_id", and "result" keys
+</ResponseField>
+
+## E2BToolkit
+
+High-level toolkit for sandbox operations.
+
+```python
+class E2BToolkit(Toolkit):
+    def __init__(
+        self,
+        sandbox_manager: SandboxManager,
+        auto_create_default: bool = True,
+        global_workers: int = 10,
+        **kwargs
+    )
+```
+
+<ParamField path="sandbox_manager" type="SandboxManager" required>
+  SandboxManager instance
+</ParamField>
+
+<ParamField path="auto_create_default" type="bool" default="True">
+  Automatically create a default sandbox on initialization
+</ParamField>
+
+<ParamField path="global_workers" type="int" default="10">
+  Number of worker threads for concurrent operations
+</ParamField>
+
+## Code Execution
+
+### run_python_code
+
+Execute Python code synchronously in a sandbox.
+
+```python
+def run_python_code(
+    self,
+    code: str,
+    sandbox_id: Optional[str] = None,
+    timeout: Optional[int] = None
+) -> Dict[str, Any]
+```
+
+<ParamField path="code" type="str" required>
+  Python code to execute
+</ParamField>
+
+<ParamField path="sandbox_id" type="str" default="None">
+  Sandbox ID (uses default if not specified)
+</ParamField>
+
+<ParamField path="timeout" type="int" default="None">
+  Execution timeout in seconds
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Execution result with status, results, logs, or error information
+</ResponseField>
+
+#### Example
+
+```python
+toolkit.run_python_code(
+    code="print('Hello, world!')\nresult = 2 + 2",
+    timeout=30
+)
+# Returns: {"status": "success", "results": [{"logs": "Hello, world!\n"}]}
+```
+
+### run_python_code_background
+
+Execute Python code as a background job.
+
+```python
+def run_python_code_background(
+    self,
+    code: str,
+    sandbox_id: Optional[str] = None,
+    job_id: Optional[str] = None
+) -> Dict[str, Any]
+```
+
+<ParamField path="code" type="str" required>
+  Python code to execute
+</ParamField>
+
+<ParamField path="sandbox_id" type="str" default="None">
+  Sandbox ID (uses default if not specified)
+</ParamField>
+
+<ParamField path="job_id" type="str" default="None">
+  Custom job ID (auto-generated if not provided)
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Dict with "status": "accepted" and "job_id"
+</ResponseField>
+
+### run_in_all_sandboxes
+
+Run code in all managed sandboxes concurrently.
+
+```python
+def run_in_all_sandboxes(
+    self,
+    code: str,
+    timeout_each: Optional[int] = None
+) -> Dict[str, Any]
+```
+
+<ParamField path="code" type="str" required>
+  Python code to execute
+</ParamField>
+
+<ParamField path="timeout_each" type="int" default="None">
+  Timeout per sandbox
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Dict mapping sandbox_id to result for each sandbox
+</ResponseField>
+
+## Command Execution
+
+### run_command
+
+Run a shell command in a sandbox.
+
+```python
+def run_command(
+    self,
+    command: str,
+    sandbox_id: Optional[str] = None,
+    background: bool = False
+) -> Dict[str, Any]
+```
+
+<ParamField path="command" type="str" required>
+  Shell command to execute
+</ParamField>
+
+<ParamField path="sandbox_id" type="str" default="None">
+  Sandbox ID (uses default if not specified)
+</ParamField>
+
+<ParamField path="background" type="bool" default="False">
+  Run as background job if True
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Command output dict or job_id if background=True
+</ResponseField>
+
+#### Example
+
+```python
+# Synchronous execution
+toolkit.run_command("pip install requests")
+
+# Background execution
+result = toolkit.run_command("python server.py", background=True)
+job_id = result["job_id"]
+```
+
+### run_command_background
+
+Run a shell command as a background job with process tracking.
+
+```python
+def run_command_background(
+    self,
+    command: str,
+    sandbox_id: Optional[str] = None,
+    job_id: Optional[str] = None
+) -> Dict[str, Any]
+```
+
+## File Operations
+
+### upload_file
+
+Upload a file from local filesystem to sandbox.
+
+```python
+def upload_file(
+    self,
+    local_path: str,
+    sandbox_id: Optional[str] = None,
+    sandbox_path: Optional[str] = None
+) -> Dict[str, Any]
+```
+
+<ParamField path="local_path" type="str" required>
+  Path to local file
+</ParamField>
+
+<ParamField path="sandbox_id" type="str" default="None">
+  Target sandbox ID
+</ParamField>
+
+<ParamField path="sandbox_path" type="str" default="None">
+  Destination path in sandbox (defaults to filename)
+</ParamField>
+
+### download_file_from_sandbox
+
+Download a file from sandbox to local filesystem.
+
+```python
+def download_file_from_sandbox(
+    self,
+    sandbox_path: str,
+    sandbox_id: Optional[str] = None,
+    local_path: Optional[str] = None
+) -> Dict[str, Any]
+```
+
+<ParamField path="sandbox_path" type="str" required>
+  Path to file in sandbox
+</ParamField>
+
+<ParamField path="sandbox_id" type="str" default="None">
+  Source sandbox ID
+</ParamField>
+
+<ParamField path="local_path" type="str" default="None">
+  Destination local path (defaults to filename)
+</ParamField>
+
+### download_png_result
+
+Download PNG image from code execution result.
+
+```python
+def download_png_result(
+    self,
+    agent: Union[Agent, Team],
+    result_index: int = 0,
+    sandbox_id: Optional[str] = None,
+    output_path: Optional[str] = None
+) -> Dict[str, Any]
+```
+
+### download_chart_data
+
+Download chart data from execution result.
+
+```python
+def download_chart_data(
+    self,
+    agent: Agent,
+    result_index: int = 0,
+    sandbox_id: Optional[str] = None,
+    output_path: Optional[str] = None,
+    add_as_artifact: bool = True
+) -> Dict[str, Any]
+```
+
+## Server & Internet Access
+
+### get_public_url
+
+Get public URL for a service running in the sandbox.
+
+```python
+def get_public_url(
+    self,
+    port: int,
+    sandbox_id: Optional[str] = None
+) -> Dict[str, Any]
+```
+
+<ParamField path="port" type="int" required>
+  Port number the service is listening on
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Dict with "status": "success" and "url" key containing public URL
+</ResponseField>
+
+### run_server
+
+Start a server in the sandbox and return its public URL.
+
+```python
+def run_server(
+    self,
+    command: str,
+    port: int,
+    sandbox_id: Optional[str] = None,
+    wait_seconds: int = 2
+) -> Dict[str, Any]
+```
+
+<ParamField path="command" type="str" required>
+  Command to start the server (e.g., "python -m http.server 8000")
+</ParamField>
+
+<ParamField path="port" type="int" required>
+  Port the server will listen on
+</ParamField>
+
+<ParamField path="wait_seconds" type="int" default="2">
+  Seconds to wait for server to start
+</ParamField>
+
+#### Example
+
+```python
+result = toolkit.run_server(
+    command="python -m http.server 8000",
+    port=8000
+)
+print(f"Server available at: {result['url']}")
+```
+
+## Job Management
+
+### get_job_status
+
+Check the status of a background job.
+
+```python
+def get_job_status(self, job_id: str) -> Dict[str, Any]
+```
+
+<ParamField path="job_id" type="str" required>
+  Job ID to check
+</ParamField>
+
+<ResponseField name="return" type="dict">
+  Status dict with "status" key ("running", "done", "error", "cancelled", "not_found")
+</ResponseField>
+
+### kill_job
+
+Cancel a running background job.
+
+```python
+def kill_job(self, job_id: str) -> Dict[str, Any]
+```
+
+<ParamField path="job_id" type="str" required>
+  Job ID to cancel
+</ParamField>
+
+## Sandbox Management
+
+### create_sandbox
+
+```python
+def create_sandbox(
+    self,
+    timeout: Optional[int] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    set_as_default: bool = False
+) -> Dict[str, Any]
+```
+
+### list_managed_sandboxes
+
+```python
+def list_managed_sandboxes(self) -> Dict[str, Any]
+```
+
+### shutdown_sandbox
+
+```python
+def shutdown_sandbox(self, sandbox_id: Optional[str] = None) -> Dict[str, Any]
+```
+
+### shutdown_all_sandboxes
+
+```python
+def shutdown_all_sandboxes(self) -> Dict[str, Any]
+```
+
+## Example Usage
+
+```python
+from tools.e2b_tools import SandboxManager, E2BToolkit
+
+# Initialize
+manager = SandboxManager(api_key="your_api_key", default_timeout=360)
+toolkit = E2BToolkit(manager, auto_create_default=True)
+
+# Execute Python code
+result = toolkit.run_python_code(
+    code="""
+import matplotlib.pyplot as plt
+plt.plot([1, 2, 3], [4, 5, 6])
+plt.savefig('chart.png')
+"""
+)
+
+# Run a web server
+server = toolkit.run_server(
+    command="python -m http.server 8000",
+    port=8000
+)
+print(f"Server URL: {server['url']}")
+
+# Background job
+job = toolkit.run_command_background("pip install pandas")
+status = toolkit.get_job_status(job["job_id"])
+```

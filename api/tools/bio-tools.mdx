@@ -1,0 +1,228 @@
+---
+title: Bio Tools
+description: Discord user information and avatar retrieval
+---
+
+The Bio Tools provide access to Discord user profiles, details, and avatars.
+
+## BioTools
+
+Toolkit for fetching Discord user information.
+
+```python
+class BioTools(Toolkit):
+    def __init__(self, client=None)
+```
+
+<ParamField path="client" type="discord.Client" default="None">
+  Discord client instance (auto-detected from context if not provided)
+</ParamField>
+
+## get_user_details
+
+Fetch detailed information about a Discord user.
+
+```python
+async def get_user_details(self, user_id: int) -> str
+```
+
+<ParamField path="user_id" type="int" required>
+  Discord user ID to fetch details for
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Formatted string containing user details, or error message
+</ResponseField>
+
+### Returned Information
+
+**Basic Info (all contexts):**
+- User ID
+- Username
+- Display name
+- Bot status
+- Account creation date
+- Avatar URL
+- Banner URL (if available)
+- Accent color (if set)
+- Bio/About Me (if available)
+
+**Guild-specific Info (server channels only):**
+- Server join date
+- Server nickname
+- Roles
+- Status (online, idle, dnd, offline)
+- Platform status (mobile, desktop, web)
+- Activities (games, Spotify, custom status, streaming)
+
+### Example Output
+
+```
+User Details for ID: 123456789
+Username: JohnDoe
+Display Name: John
+Bot: False
+Created At: 2020-01-15 10:30:00
+Avatar URL: https://cdn.discordapp.com/avatars/...
+Joined Server: 2023-06-20 14:00:00
+Server Nickname: Johnny
+Roles: Admin, Moderator
+Status: online
+Desktop Status: Online
+Activities:
+  - Custom Status: Working on project 🚀
+  - Listening to Spotify: Song Name by Artist
+Banner URL: https://cdn.discordapp.com/banners/...
+Accent Color: #5865F2
+Bio: Software developer and Discord bot enthusiast
+```
+
+### Example Usage
+
+```python
+from tools.bio_tools import BioTools
+from core.execution_context import set_current_channel
+
+bio_tools = BioTools(client=discord_client)
+set_current_channel(message.channel)
+
+details = await bio_tools.get_user_details(123456789)
+print(details)
+```
+
+## get_user_avatar
+
+Fetch a user's avatar as an image for analysis.
+
+```python
+async def get_user_avatar(self, user_id: int) -> ToolResult
+```
+
+<ParamField path="user_id" type="int" required>
+  Discord user ID to fetch avatar for
+</ParamField>
+
+<ResponseField name="return" type="ToolResult">
+  ToolResult containing avatar image and description
+</ResponseField>
+
+### Response Format
+
+Returns a `ToolResult` with:
+- **content**: Description text
+- **images**: List containing avatar Image object
+
+### Example Usage
+
+```python
+from tools.bio_tools import BioTools
+
+bio_tools = BioTools()
+result = await bio_tools.get_user_avatar(123456789)
+
+# Access the image
+avatar_image = result.images[0]
+print(f"Avatar URL: {avatar_image.url}")
+```
+
+### In Agent Context
+
+Agents can use this to analyze user avatars:
+
+```python
+from agno.agent import Agent
+from tools.bio_tools import BioTools
+
+agent = Agent(
+    name="User Analysis Agent",
+    tools=[BioTools()],
+    instructions="Use get_user_avatar to analyze profile pictures."
+)
+
+result = await agent.arun(
+    "What does user 123456789's avatar look like?"
+)
+```
+
+## Context Detection
+
+BioTools automatically detects the Discord client from multiple sources:
+
+1. **Injected client** (constructor parameter)
+2. **Channel state** (works for DMs and guild channels)
+3. **Guild state** (guild channels only)
+
+### Works in Both Contexts
+
+**Guild Channels:**
+```python
+# Returns Member object with full details
+details = await bio_tools.get_user_details(user_id)
+# Includes: roles, status, activities, etc.
+```
+
+**DM Channels:**
+```python
+# Returns User object with basic details
+details = await bio_tools.get_user_details(user_id)
+# Includes: username, avatar, banner, bio
+```
+
+## Error Handling
+
+Returns descriptive errors:
+
+- **No context**: `"Error: No execution context found. Cannot access Discord client."`
+- **No client**: `"Error: Cannot access Discord client in DM/guild context. User details unavailable."`
+- **User not found**: `"User with ID {user_id} not found in the current context (Guild: Name)."`
+- **API error**: `"Error fetching user details: <error message>"`
+
+## Integration Example
+
+```python
+from agno.agent import Agent
+from agno.team import Team
+from tools.bio_tools import BioTools
+from core.execution_context import set_current_channel
+
+# Create team with BioTools
+team = Team(
+    name="Hero Team",
+    model=model,
+    tools=[BioTools(client=discord_client)],
+    members=[...]
+)
+
+# In message handler
+@bot.event
+async def on_message(message):
+    set_current_channel(message.channel)
+    
+    response = await team.arun(
+        f"Tell me about user {message.author.id}",
+        session_id=str(message.channel.id)
+    )
+    
+    await message.channel.send(response.content)
+```
+
+## Client Priority
+
+The tool uses this priority order for finding the Discord client:
+
+1. `self.client` (passed in constructor)
+2. `channel._state._get_client()` (from execution context)
+3. `guild._state._get_client()` (from guild, if available)
+
+This ensures the tool works in:
+- Guild text channels
+- DM channels
+- Group DM channels
+- Voice channel text chats
+
+## Performance Notes
+
+- Uses Discord API cache when available
+- Falls back to API fetch for missing data
+- Fetches full user profile for banner/bio (requires API call)
+- Member fetch is attempted before user fetch in guilds

@@ -1,0 +1,265 @@
+---
+title: "TL;DR Summaries"
+description: "Automatic conversation summarization using the .tldr command"
+---
+
+## Overview
+
+The TL;DR feature allows users to generate AI-powered summaries of Discord conversations. It fetches recent messages and uses a language model to create concise bullet-point summaries.
+
+## Command Usage
+
+The `.tldr` command is a self-bot command that summarizes recent conversation history:
+
+```
+.tldr [count]
+```
+
+- **count** (optional): Number of messages to summarize (default: 50)
+
+### Example
+
+```
+.tldr 100
+```
+
+This will summarize the last 100 messages in the channel.
+
+## Implementation
+
+### Command Setup
+
+The TL;DR command is registered as a bot command:
+
+```python
+def setup_tldr(bot: SelfBot):
+    @bot.command("tldr")
+    async def tldr(ctx, count: int = 50):
+        if ctx.author.id != bot.bot.user.id:
+            return
+
+        await ctx.message.delete(delay=1.5)
+
+        messages = await _fetch_recent_messages(ctx, count)
+        summary = await _summarize_messages(messages)
+
+        for chunk in _chunk_text(summary):
+            await ctx.send(f"**TL;DR:**\n{chunk}")
+```
+
+Source: `discord_bot/tldr.py:26-38`
+
+### LLM Client Configuration
+
+The feature uses Groq's API with an OpenAI-compatible client:
+
+```python
+from openai import AsyncOpenAI
+
+load_dotenv()
+client = AsyncOpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=os.getenv("GROQ_API_KEY"),
+)
+```
+
+Source: `discord_bot/tldr.py:16-19`
+
+**Required Environment Variable:**
+- `GROQ_API_KEY`: Your Groq API key
+
+## Message Fetching
+
+The system fetches recent messages while filtering out existing TL;DR summaries:
+
+```python
+async def _fetch_recent_messages(ctx, count: int = 50, skip_existing_tldr: bool = True):
+    try:
+        messages = [
+            m
+            async for m in ctx.channel.history(limit=count)
+            if not (
+                skip_existing_tldr
+                and m.author.id == ctx.bot.user.id
+                and "**TL;DR:**" in m.content
+            )
+        ]
+        messages.reverse()
+        return messages
+    except Exception as e:
+        await ctx.send(f"Could not fetch history: {e}", delete_after=10)
+        return []
+```
+
+Source: `discord_bot/tldr.py:46-61`
+
+### Key Features
+
+- **Filters existing summaries**: Prevents summarizing previous TL;DR outputs
+- **Chronological order**: Reverses messages to maintain conversation flow
+- **Error handling**: Graceful failure with user notification
+- **Auto-delete errors**: Error messages disappear after 10 seconds
+
+## Summarization
+
+### Prompt Building
+
+Messages are formatted with timestamps and author names:
+
+```python
+def _build_prompt(messages):
+    lines = []
+    for m in messages:
+        timestamp = m.created_at.strftime("%H:%M")
+        author = m.author.display_name
+        content = m.clean_content
+        lines.append(f"[{timestamp}] {author}: {content}")
+    return (
+        "Summarize the following Discord conversation in 4-6 bullet points.\n\n"
+        + "\n".join(lines)
+    )
+```
+
+Source: `discord_bot/tldr.py:77-87`
+
+**Format Example:**
+```
+[14:23] Alice: Hey, did anyone finish the project?
+[14:25] Bob: Almost done, just fixing some bugs
+[14:27] Charlie: I can help review it
+```
+
+### AI Model Configuration
+
+The system uses Groq's Llama model for fast, accurate summaries:
+
+```python
+async def _summarize_messages(messages):
+    prompt = _build_prompt(messages)
+    try:
+        response = await client.chat.completions.create(
+            model="llama-3.1-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"OpenAI error: {e}"
+```
+
+Source: `discord_bot/tldr.py:64-74`
+
+### Model Parameters
+
+- **Model**: `llama-3.1-70b-versatile`
+- **Temperature**: 0.4 (balanced creativity and consistency)
+- **Output**: 4-6 bullet points
+
+## Response Formatting
+
+### Text Chunking
+
+Long summaries are automatically split to respect Discord's message limits:
+
+```python
+def _chunk_text(text, size: int = 1800):
+    return [text[i : i + size] for i in range(0, len(text), size)]
+```
+
+Source: `discord_bot/tldr.py:90-91`
+
+- **Chunk size**: 1800 characters (safe margin below Discord's 2000 limit)
+- **Automatic splitting**: Handles very long summaries gracefully
+
+### Output Format
+
+Each chunk is sent with a "TL;DR" header:
+
+```python
+for chunk in _chunk_text(summary):
+    await ctx.send(f"**TL;DR:**\n{chunk}")
+```
+
+Source: `discord_bot/tldr.py:37-38`
+
+## Self-Bot Protection
+
+The command includes self-bot authorization to prevent misuse:
+
+```python
+if ctx.author.id != bot.bot.user.id:
+    return
+
+await ctx.message.delete(delay=1.5)
+```
+
+Source: `discord_bot/tldr.py:29-32`
+
+- **Authorization check**: Only the bot owner can trigger summaries
+- **Auto-delete**: Original command message is deleted after 1.5 seconds
+- **Clean interface**: Keeps channels tidy
+
+## Usage Workflow
+
+1. User sends `.tldr 50` command
+2. Bot verifies the user is the bot owner
+3. Original command message is deleted
+4. Bot fetches last 50 messages (excluding existing TL;DRs)
+5. Messages are formatted and sent to Groq API
+6. AI generates 4-6 bullet point summary
+7. Summary is chunked and posted with "TL;DR" header
+
+## Error Handling
+
+### Fetch Errors
+
+```python
+try:
+    messages = [...]
+except Exception as e:
+    await ctx.send(f"Could not fetch history: {e}", delete_after=10)
+    return []
+```
+
+### API Errors
+
+```python
+try:
+    response = await client.chat.completions.create(...)
+    return response.choices[0].message.content.strip()
+except Exception as e:
+    return f"OpenAI error: {e}"
+```
+
+Source: `discord_bot/tldr.py:64-74`
+
+## Configuration
+
+### Environment Variables
+
+```bash
+GROQ_API_KEY=your_groq_api_key_here
+```
+
+### Customization Options
+
+- **Default message count**: Modify `count: int = 50` parameter
+- **Summary length**: Adjust prompt to request more/fewer bullet points
+- **Model selection**: Change `model` parameter to different Groq models
+- **Temperature**: Adjust for more creative (higher) or consistent (lower) summaries
+- **Chunk size**: Modify `size: int = 1800` for different splitting behavior
+
+## Best Practices
+
+1. **Message count**: Use 30-100 messages for best results
+   - Too few: Summary may lack context
+   - Too many: May hit token limits or lose coherence
+
+2. **Channel types**: Works best in active discussion channels
+   - May produce generic summaries in low-activity channels
+
+3. **Frequency**: Avoid spamming summaries
+   - Existing TL;DRs are automatically filtered to prevent recursion
+
+4. **Privacy**: Be mindful when summarizing sensitive conversations
+   - Summaries are posted publicly in the channel

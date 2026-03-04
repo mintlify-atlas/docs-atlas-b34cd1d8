@@ -1,0 +1,337 @@
+---
+title: Database
+description: PostgreSQL database operations for message storage and retrieval
+---
+
+The Database module provides async PostgreSQL operations for storing and retrieving Discord messages.
+
+## init_db
+
+Initialize the database connection pool and create schema.
+
+```python
+async def init_db()
+```
+
+Creates:
+- Connection pool to PostgreSQL
+- `messages` table for message storage
+- `channel_status` table for backfill tracking
+- Optimized indexes for queries
+
+### Example
+
+```python
+from core.database import init_db
+
+await init_db()
+```
+
+## close_db
+
+Close the database connection pool.
+
+```python
+async def close_db()
+```
+
+Should be called on application shutdown to gracefully close connections.
+
+### Example
+
+```python
+from core.database import close_db
+
+await close_db()
+```
+
+## store_message
+
+Store or update a message in the database.
+
+```python
+async def store_message(
+    message_id: int,
+    channel_id: int,
+    author_id: int,
+    author_name: str,
+    content: str,
+    created_at: datetime,
+    timestamp_str: str
+)
+```
+
+<ParamField path="message_id" type="int" required>
+  Discord message ID
+</ParamField>
+
+<ParamField path="channel_id" type="int" required>
+  Discord channel ID
+</ParamField>
+
+<ParamField path="author_id" type="int" required>
+  Discord user ID of message author
+</ParamField>
+
+<ParamField path="author_name" type="str" required>
+  Display name of message author
+</ParamField>
+
+<ParamField path="content" type="str" required>
+  Message text content
+</ParamField>
+
+<ParamField path="created_at" type="datetime" required>
+  Message creation timestamp
+</ParamField>
+
+<ParamField path="timestamp_str" type="str" required>
+  Formatted timestamp string
+</ParamField>
+
+### Behavior
+
+Uses `ON CONFLICT` to update existing messages, enabling edit tracking.
+
+### Example
+
+```python
+from core.database import store_message
+from datetime import datetime
+
+await store_message(
+    message_id=123456789,
+    channel_id=987654321,
+    author_id=111222333,
+    author_name="JohnDoe",
+    content="Hello world!",
+    created_at=datetime.now(),
+    timestamp_str="2024-03-04 10:30:00"
+)
+```
+
+## delete_message
+
+Delete a message from the database.
+
+```python
+async def delete_message(message_id: int)
+```
+
+<ParamField path="message_id" type="int" required>
+  Discord message ID to delete
+</ParamField>
+
+### Example
+
+```python
+from core.database import delete_message
+
+await delete_message(123456789)
+```
+
+## get_messages
+
+Retrieve the most recent messages for a channel in chronological order.
+
+```python
+async def get_messages(channel_id: int, limit: int = 2000) -> List[Dict]
+```
+
+<ParamField path="channel_id" type="int" required>
+  Discord channel ID
+</ParamField>
+
+<ParamField path="limit" type="int" default="2000">
+  Maximum number of messages to retrieve
+</ParamField>
+
+<ResponseField name="return" type="List[Dict]">
+  List of message dictionaries, oldest to newest
+</ResponseField>
+
+### Message Dictionary Format
+
+```python
+{
+    "message_id": 123456789,
+    "channel_id": 987654321,
+    "author_id": 111222333,
+    "author_name": "JohnDoe",
+    "content": "Hello world!",
+    "created_at": datetime(...)
+}
+```
+
+### Example
+
+```python
+from core.database import get_messages
+
+messages = await get_messages(channel_id=987654321, limit=100)
+for msg in messages:
+    print(f"{msg['author_name']}: {msg['content']}")
+```
+
+## get_message_count
+
+Get the number of messages stored for a channel.
+
+```python
+async def get_message_count(channel_id: int) -> int
+```
+
+<ParamField path="channel_id" type="int" required>
+  Discord channel ID
+</ParamField>
+
+<ResponseField name="return" type="int">
+  Count of messages in the database
+</ResponseField>
+
+### Example
+
+```python
+from core.database import get_message_count
+
+count = await get_message_count(987654321)
+print(f"Channel has {count} messages")
+```
+
+## get_latest_message_id
+
+Get the ID of the newest message stored for a channel.
+
+```python
+async def get_latest_message_id(channel_id: int) -> Optional[int]
+```
+
+<ParamField path="channel_id" type="int" required>
+  Discord channel ID
+</ParamField>
+
+<ResponseField name="return" type="Optional[int]">
+  Message ID of newest message, or None if no messages
+</ResponseField>
+
+### Example
+
+```python
+from core.database import get_latest_message_id
+
+latest_id = await get_latest_message_id(987654321)
+if latest_id:
+    print(f"Latest message ID: {latest_id}")
+```
+
+## get_oldest_message_id
+
+Get the ID of the oldest message stored for a channel.
+
+```python
+async def get_oldest_message_id(channel_id: int) -> Optional[int]
+```
+
+<ParamField path="channel_id" type="int" required>
+  Discord channel ID
+</ParamField>
+
+<ResponseField name="return" type="Optional[int]">
+  Message ID of oldest message, or None if no messages
+</ResponseField>
+
+### Example
+
+```python
+from core.database import get_oldest_message_id
+
+oldest_id = await get_oldest_message_id(987654321)
+if oldest_id:
+    print(f"Oldest message ID: {oldest_id}")
+```
+
+## is_channel_fully_backfilled
+
+Check if a channel is marked as fully backfilled.
+
+```python
+async def is_channel_fully_backfilled(channel_id: int) -> bool
+```
+
+<ParamField path="channel_id" type="int" required>
+  Discord channel ID
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  True if channel is fully backfilled
+</ResponseField>
+
+### Example
+
+```python
+from core.database import is_channel_fully_backfilled
+
+if await is_channel_fully_backfilled(987654321):
+    print("Channel is fully backfilled")
+```
+
+## mark_channel_fully_backfilled
+
+Mark a channel as fully backfilled.
+
+```python
+async def mark_channel_fully_backfilled(channel_id: int, status: bool = True)
+```
+
+<ParamField path="channel_id" type="int" required>
+  Discord channel ID
+</ParamField>
+
+<ParamField path="status" type="bool" default="True">
+  Backfill status to set
+</ParamField>
+
+### Example
+
+```python
+from core.database import mark_channel_fully_backfilled
+
+await mark_channel_fully_backfilled(987654321)
+```
+
+## Database Schema
+
+### messages table
+
+```sql
+CREATE TABLE messages (
+    message_id BIGINT PRIMARY KEY,
+    channel_id BIGINT NOT NULL,
+    author_id BIGINT NOT NULL,
+    author_name TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    timestamp_str TEXT NOT NULL
+);
+
+CREATE INDEX idx_messages_channel_created
+    ON messages (channel_id, created_at DESC);
+```
+
+### channel_status table
+
+```sql
+CREATE TABLE channel_status (
+    channel_id BIGINT PRIMARY KEY,
+    is_fully_backfilled BOOLEAN DEFAULT FALSE,
+    last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## Configuration
+
+Requires `POSTGRES_URL` environment variable:
+
+```bash
+POSTGRES_URL=postgresql://user:pass@localhost:5432/junkie
+```

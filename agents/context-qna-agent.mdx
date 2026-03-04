@@ -1,0 +1,304 @@
+---
+title: Context Q&A Agent
+description: Chat history analysis and conversation context retrieval
+---
+
+## Overview
+
+The **Context Q&A Agent** specializes in answering questions about past conversations, user statements, and chat history. It uses a long-context model with history retrieval tools.
+
+## Initialization
+
+```python
+# agent/agent_factory.py:264-290
+context_qna_agent = Agent(
+    id="context-qna-agent",
+    name="Chat Context Q&A",
+    role="Answering questions about users, topics, and past conversations based on extensive chat history",
+    model=OpenAILike(
+        id=CONTEXT_AGENT_MODEL,
+        max_tokens=8000,
+        temperature=0.3,
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY,
+    ),
+    tools=[HistoryTools(), BioTools(client=client)],
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+    instructions="""You specialize in answering questions about the chat history, users, and topics discussed.
+
+You have access to `read_chat_history`. Call this tool to get the conversation history before answering questions.
+IMPORTANT: always fetch a minimum of 5000 messages on first try.
+Use the history to:
+- Answer "who said what" questions
+- Summarize discussions on specific topics
+- Track when topics were last mentioned
+- Identify user opinions and statements
+- Provide context about past conversations
+
+Be precise with timestamps and attribute statements accurately to users."""
+)
+```
+
+## Model Configuration
+
+Uses a configurable long-context model:
+
+```python
+model=OpenAILike(
+    id=CONTEXT_AGENT_MODEL,  # From environment
+    max_tokens=8000,
+    temperature=0.3,  # Lower temp for factual recall
+    base_url=PROVIDER,
+    api_key=CUSTOM_PROVIDER_API_KEY,
+)
+```
+
+### Model Requirements
+
+- **Long context window**: Must handle thousands of messages
+- **Low temperature**: 0.3 for accurate fact retrieval
+- **High token limit**: 8000 for comprehensive responses
+
+Configure via environment:
+
+```bash
+CONTEXT_AGENT_MODEL="gemini-2.0-flash-exp"  # Or other long-context model
+CONTEXT_AGENT_MAX_MESSAGES=5000  # Default minimum fetch
+```
+
+## Tools
+
+### 1. HistoryTools
+
+Provides `read_chat_history` function:
+
+```python
+tools=[HistoryTools(), BioTools(client=client)]
+```
+
+**Key instruction:**
+
+> IMPORTANT: always fetch a minimum of 5000 messages on first try.
+
+The agent must:
+1. Call `read_chat_history` before answering
+2. Fetch at least 5000 messages initially
+3. Fetch more if needed for complete context
+
+### 2. BioTools
+
+Accesses user biographical information:
+
+```python
+BioTools(client=client)
+```
+
+Provides:
+- User profiles
+- Stored preferences
+- User metadata
+
+## Use Cases
+
+From `system_prompt.md:83`:
+
+> **Long-context chat history / thread analysis / who-said-what** → delegate to `context-qna-agent` (requires Channel ID).
+
+### 1. Message Attribution
+
+**Example queries:**
+- "Who said they were working on the API?"
+- "Did anyone mention the deadline?"
+- "What did Alice say about the project?"
+
+The agent:
+1. Fetches history with `read_chat_history`
+2. Searches for relevant messages
+3. Attributes statements to specific users
+4. Includes timestamps
+
+### 2. Topic Summaries
+
+**Example queries:**
+- "Summarize the discussion about deployment"
+- "What have we decided about the new feature?"
+- "Recap the meeting from yesterday"
+
+The agent:
+1. Retrieves extensive message history
+2. Identifies topic-relevant messages
+3. Chronologically summarizes
+4. Notes key decisions and opinions
+
+### 3. Timeline Tracking
+
+**Example queries:**
+- "When was the bug first mentioned?"
+- "How long ago did we discuss pricing?"
+- "What was the last message about the release?"
+
+The agent:
+1. Scans timestamps in history
+2. Identifies first/last mentions
+3. Provides precise timing
+4. Shows evolution of discussion
+
+### 4. Opinion Mining
+
+**Example queries:**
+- "What's Bob's opinion on the redesign?"
+- "Who supports the new approach?"
+- "What concerns were raised?"
+
+The agent:
+1. Finds user-specific statements
+2. Extracts opinions and sentiments
+3. Provides context for each opinion
+4. Notes changes over time
+
+## Instructions
+
+From the agent's instructions:
+
+```markdown
+You specialize in answering questions about the chat history, users, and topics discussed.
+
+You have access to `read_chat_history`. Call this tool to get the conversation history before answering questions.
+IMPORTANT: always fetch a minimum of 5000 messages on first try.
+
+Use the history to:
+- Answer "who said what" questions
+- Summarize discussions on specific topics
+- Track when topics were last mentioned
+- Identify user opinions and statements
+- Provide context about past conversations
+
+Be precise with timestamps and attribute statements accurately to users.
+```
+
+## Context Awareness
+
+```python
+add_datetime_to_context=True,
+timezone_identifier="Asia/Kolkata",
+```
+
+From `system_prompt.md:48-73`, the agent understands:
+
+### Temporal Context
+
+> The current date/time is provided at the start of the context in IST. Each message has a timestamp like `[2h ago]`, `[1d ago]`, or `[Dec 15, 14:30]` - all times are in IST.
+
+### Past vs Present
+
+> When someone says "I'm working on X" in a message from 2 hours ago, they were working on it THEN, not necessarily now.
+
+The agent:
+- Uses phrases like "Earlier you mentioned..."
+- Distinguishes past statements from current reality
+- Calculates relative times ("yesterday", "last week")
+
+### Reply Context
+
+> If a user is replying to a specific message, you will see a `[REPLY CONTEXT]` block before their message.
+
+The agent understands message threading and reply chains.
+
+## Channel ID Requirement
+
+From `system_prompt.md:83`:
+
+> delegate to `context-qna-agent` (requires Channel ID)
+
+The agent needs the Discord channel ID to:
+- Scope history retrieval
+- Access correct conversation thread
+- Maintain context boundaries
+
+## Performance Characteristics
+
+- **Speed**: Moderate (history fetch adds latency)
+- **Accuracy**: High (low temperature, precise retrieval)
+- **Context limit**: Determined by `CONTEXT_AGENT_MODEL`
+- **Minimum fetch**: 5000 messages per query
+
+## Best Practices
+
+### 1. Always Fetch History First
+
+```python
+# CORRECT workflow:
+1. User asks: "What did I say about the API?"
+2. Agent calls: read_chat_history(limit=5000)
+3. Agent analyzes history
+4. Agent responds with attributed quote
+
+# INCORRECT:
+1. User asks: "What did I say about the API?"
+2. Agent guesses or says "I don't know"
+```
+
+### 2. Fetch Sufficient Messages
+
+```python
+# Minimum first fetch
+read_chat_history(limit=5000)
+
+# Fetch more if needed
+if topic_not_found and messages_available:
+    read_chat_history(limit=10000)
+```
+
+### 3. Precise Attribution
+
+```markdown
+GOOD: "Alice said 'the API is ready' on Dec 15 at 14:30 IST"
+BAD: "Someone mentioned the API might be ready"
+```
+
+### 4. Temporal Precision
+
+```markdown
+GOOD: "The bug was first mentioned 3 days ago by Bob"
+BAD: "The bug was mentioned recently"
+```
+
+## Configuration
+
+Environment variables:
+
+```bash
+# Long-context model for history analysis
+CONTEXT_AGENT_MODEL="gemini-2.0-flash-exp"
+
+# Maximum messages to consider
+CONTEXT_AGENT_MAX_MESSAGES=5000
+
+# Provider endpoint
+PROVIDER=https://your-openai-compatible-endpoint
+CUSTOM_PROVIDER_API_KEY=your_api_key
+```
+
+## Delegation Strategy
+
+### When to Use Context Q&A Agent
+
+✅ **Use for:**
+- Questions about past conversations
+- "Who said" queries
+- Topic summaries
+- Timeline questions
+- Opinion tracking
+
+❌ **Do NOT use for:**
+- Current web information (use Perplexity Agent)
+- Code execution (use Code Agent)
+- Math (use Team Leader)
+- Real-time data (use Perplexity Agent)
+
+## Next Steps
+
+- [History Tools Integration](/tools/history-tools)
+- [Memory Management](/agents/memory-management)
+- [System Prompts](/agents/system-prompts)

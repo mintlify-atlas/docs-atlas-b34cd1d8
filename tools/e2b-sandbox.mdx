@@ -1,0 +1,573 @@
+---
+title: E2B Sandbox
+description: Execute code in isolated sandboxes with E2B Code Interpreter
+---
+
+The E2B Sandbox toolkit provides production-grade code execution in isolated environments with multi-sandbox management, concurrency, background jobs, and file operations.
+
+## Overview
+
+E2B enables safe execution of Python code and shell commands in secure sandboxes. The toolkit includes:
+
+- **SandboxManager**: Lifecycle management for E2B sandboxes
+- **E2BToolkit**: High-level API for code execution, file operations, and job management
+- **Multi-sandbox support**: Create and manage multiple isolated environments
+- **Background jobs**: Execute long-running tasks asynchronously
+- **File operations**: Upload, download, and manage files in sandboxes
+- **Public URLs**: Expose services running in sandboxes to the internet
+
+## Installation
+
+```bash
+pip install e2b_code_interpreter
+```
+
+Set your E2B API key:
+
+```bash
+export E2B_API_KEY="your-api-key"
+```
+
+## SandboxManager
+
+Manages the lifecycle of E2B sandboxes.
+
+### Initialization
+
+```python
+from tools.e2b_tools import SandboxManager
+
+# Auto-loads E2B_API_KEY from environment
+manager = SandboxManager(api_key=None, default_timeout=360)
+```
+
+<ParamField path="api_key" type="str" default="None">
+  E2B API key. If None, reads from `E2B_API_KEY` environment variable.
+</ParamField>
+
+<ParamField path="default_timeout" type="int" default="300">
+  Default timeout in seconds for sandbox operations.
+</ParamField>
+
+<ParamField path="default_options" type="dict" default="None">
+  Additional options passed to sandbox creation.
+</ParamField>
+
+### Methods
+
+#### create()
+
+Create a new sandbox.
+
+```python
+slot = manager.create(timeout=300, metadata={"purpose": "data-analysis"})
+print(f"Created sandbox: {slot.sandbox_id}")
+```
+
+<ParamField path="timeout" type="int" default="None">
+  Sandbox timeout in seconds. Uses `default_timeout` if not specified.
+</ParamField>
+
+<ParamField path="metadata" type="dict" default="None">
+  Custom metadata to attach to the sandbox.
+</ParamField>
+
+**Returns**: `SandboxSlot` object containing the sandbox instance and metadata.
+
+#### connect()
+
+Connect to an existing sandbox by ID.
+
+```python
+slot = manager.connect("sandbox-abc123")
+```
+
+<ParamField path="sandbox_id" type="str" required>
+  ID of the sandbox to connect to.
+</ParamField>
+
+#### get_slot()
+
+Retrieve a managed sandbox by ID.
+
+```python
+# Get specific sandbox
+slot = manager.get_slot("sandbox-abc123")
+
+# Get default sandbox (first created)
+slot = manager.get_slot()
+```
+
+#### list_account_sandboxes()
+
+List all sandboxes in your E2B account.
+
+```python
+sandboxes = manager.list_account_sandboxes()
+for sb in sandboxes:
+    print(f"Sandbox {sb['sandbox_id']}: {sb['started_at']}")
+```
+
+#### shutdown()
+
+Shutdown a sandbox and remove it from management.
+
+```python
+result = manager.shutdown("sandbox-abc123")
+```
+
+## E2BToolkit
+
+High-level toolkit integrating SandboxManager with agent frameworks.
+
+### Initialization
+
+```python
+from tools.e2b_tools import SandboxManager, E2BToolkit
+
+manager = SandboxManager(api_key=None, default_timeout=360)
+toolkit = E2BToolkit(manager, auto_create_default=False)
+```
+
+<ParamField path="sandbox_manager" type="SandboxManager" required>
+  SandboxManager instance for sandbox lifecycle management.
+</ParamField>
+
+<ParamField path="auto_create_default" type="bool" default="True">
+  Automatically create a default sandbox on initialization.
+</ParamField>
+
+<ParamField path="global_workers" type="int" default="10">
+  Number of worker threads for background job execution.
+</ParamField>
+
+### Code Execution
+
+#### run_python_code()
+
+Execute Python code synchronously in a sandbox.
+
+```python
+result = toolkit.run_python_code(
+    code="import numpy as np\nprint(np.array([1, 2, 3]).mean())",
+    sandbox_id=None,  # Uses default sandbox
+    timeout=60
+)
+
+if result["status"] == "success":
+    print(result["results"])
+else:
+    print(result["error"])
+```
+
+<ParamField path="code" type="str" required>
+  Python code to execute.
+</ParamField>
+
+<ParamField path="sandbox_id" type="str" default="None">
+  Sandbox ID to use. If None, uses the default sandbox.
+</ParamField>
+
+<ParamField path="timeout" type="int" default="None">
+  Execution timeout in seconds.
+</ParamField>
+
+**Returns**: Dictionary with `status` ("success" or "error") and `results` or `error` details.
+
+#### run_python_code_background()
+
+Execute Python code asynchronously and return a job ID.
+
+```python
+result = toolkit.run_python_code_background(
+    code="import time; time.sleep(10); print('Done')",
+    sandbox_id=None
+)
+
+job_id = result["job_id"]
+
+# Check status later
+status = toolkit.get_job_status(job_id)
+```
+
+#### run_in_all_sandboxes()
+
+Run the same code in all managed sandboxes concurrently.
+
+```python
+results = toolkit.run_in_all_sandboxes(
+    code="import sys; print(sys.version)",
+    timeout_each=30
+)
+
+for sandbox_id, result in results["results"].items():
+    print(f"{sandbox_id}: {result}")
+```
+
+### Shell Commands
+
+#### run_command()
+
+Run a shell command in a sandbox.
+
+```python
+# Synchronous execution
+result = toolkit.run_command(
+    command="pip install pandas",
+    sandbox_id=None,
+    background=False
+)
+
+print(result["output"]["stdout"])
+```
+
+<ParamField path="command" type="str" required>
+  Shell command to execute.
+</ParamField>
+
+<ParamField path="sandbox_id" type="str" default="None">
+  Sandbox ID to use.
+</ParamField>
+
+<ParamField path="background" type="bool" default="False">
+  If True, returns immediately with a job ID.
+</ParamField>
+
+#### run_command_background()
+
+Run a shell command in the background.
+
+```python
+result = toolkit.run_command_background(
+    command="python server.py",
+    sandbox_id=None
+)
+
+job_id = result["job_id"]
+```
+
+### Job Management
+
+#### get_job_status()
+
+Check the status of a background job.
+
+```python
+status = toolkit.get_job_status(job_id)
+
+if status["status"] == "done":
+    print("Result:", status["result"])
+elif status["status"] == "running":
+    print("Still running...")
+```
+
+**Returns**: Dictionary with `status` ("pending", "running", "done", "cancelled", "error") and optional `result` or `error`.
+
+#### kill_job()
+
+Cancel a running job.
+
+```python
+result = toolkit.kill_job(job_id)
+print(f"Cancelled: {result['status']}")
+```
+
+### File Operations
+
+#### upload_file()
+
+Upload a file from local filesystem to sandbox.
+
+```python
+result = toolkit.upload_file(
+    local_path="/path/to/data.csv",
+    sandbox_id=None,
+    sandbox_path="/home/data.csv"
+)
+
+print(f"Uploaded to: {result['sandbox_path']}")
+```
+
+<ParamField path="local_path" type="str" required>
+  Path to the local file to upload.
+</ParamField>
+
+<ParamField path="sandbox_id" type="str" default="None">
+  Sandbox ID to upload to.
+</ParamField>
+
+<ParamField path="sandbox_path" type="str" default="None">
+  Destination path in sandbox. Defaults to filename from local_path.
+</ParamField>
+
+#### download_file_from_sandbox()
+
+Download a file from sandbox to local filesystem.
+
+```python
+result = toolkit.download_file_from_sandbox(
+    sandbox_path="/home/output.png",
+    sandbox_id=None,
+    local_path="./output.png"
+)
+
+print(f"Downloaded to: {result['local_path']}")
+```
+
+#### download_png_result()
+
+Save a PNG from the last execution and create an Image artifact.
+
+```python
+result = toolkit.download_png_result(
+    agent=my_agent,
+    result_index=0,
+    sandbox_id=None,
+    output_path="./chart.png"
+)
+
+print(f"Image ID: {result['image_id']}")
+print(f"File URL: {result['file_url']}")
+```
+
+#### download_chart_data()
+
+Extract chart data from execution results.
+
+```python
+result = toolkit.download_chart_data(
+    agent=my_agent,
+    result_index=0,
+    sandbox_id=None,
+    output_path="./chart-data.json",
+    add_as_artifact=True
+)
+
+print(f"Chart data saved to: {result['chart_path']}")
+```
+
+### Internet Access
+
+#### get_public_url()
+
+Get a public URL for a service running in the sandbox.
+
+```python
+result = toolkit.get_public_url(
+    port=8000,
+    sandbox_id=None
+)
+
+print(f"Public URL: {result['url']}")
+```
+
+<ParamField path="port" type="int" required>
+  Port number the service is running on in the sandbox.
+</ParamField>
+
+<ParamField path="sandbox_id" type="str" default="None">
+  Sandbox ID to use.
+</ParamField>
+
+#### run_server()
+
+Start a server in the sandbox and return its public URL.
+
+```python
+result = toolkit.run_server(
+    command="python -m http.server 8000",
+    port=8000,
+    sandbox_id=None,
+    wait_seconds=2
+)
+
+if result["status"] == "success":
+    print(f"Server running at: {result['url']}")
+```
+
+<ParamField path="command" type="str" required>
+  Shell command to start the server.
+</ParamField>
+
+<ParamField path="port" type="int" required>
+  Port the server will listen on.
+</ParamField>
+
+<ParamField path="wait_seconds" type="int" default="2">
+  Seconds to wait before querying public URL.
+</ParamField>
+
+### Sandbox Management
+
+#### create_sandbox()
+
+Create a new sandbox through the toolkit.
+
+```python
+result = toolkit.create_sandbox(
+    timeout=300,
+    metadata={"purpose": "web-scraping"},
+    set_as_default=True
+)
+
+print(f"Created: {result['sandbox_id']}")
+```
+
+#### shutdown_sandbox()
+
+Shutdown a specific sandbox.
+
+```python
+result = toolkit.shutdown_sandbox(sandbox_id="sandbox-abc123")
+```
+
+#### shutdown_all_sandboxes()
+
+Shutdown all managed sandboxes.
+
+```python
+results = toolkit.shutdown_all_sandboxes()
+for sid, result in results["results"].items():
+    print(f"Shutdown {sid}: {result['status']}")
+```
+
+#### force_shutdown_all()
+
+Force shutdown all sandboxes in the account (use with caution).
+
+```python
+results = toolkit.force_shutdown_all()
+```
+
+<Warning>
+This will attempt to kill **every sandbox** visible to your API key, including those not managed by this toolkit instance.
+</Warning>
+
+## Agent Integration
+
+Integrating E2B with Agno agents:
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAILike
+from tools.e2b_tools import SandboxManager, E2BToolkit
+
+# Setup E2B
+manager = SandboxManager(api_key=None, default_timeout=360)
+e2b_toolkit = E2BToolkit(manager, auto_create_default=False)
+
+# Create agent with E2B tools
+code_agent = Agent(
+    name="Code Agent",
+    role="Executing code in secure sandboxes",
+    model=OpenAILike(
+        id="gpt-5",
+        base_url="https://your-api.com",
+        api_key="your-key"
+    ),
+    tools=[e2b_toolkit],
+    instructions="""
+    You execute code in E2B sandboxes. Always create a sandbox before running code.
+    Use appropriate timeouts based on task complexity.
+    Clean up sandboxes when done.
+    """
+)
+```
+
+## Usage Example
+
+Complete workflow example from agent_factory.py:
+
+```python
+from tools.e2b_tools import SandboxManager, E2BToolkit
+from agno.tools.mcp import MCPTools
+from agno.tools.exa import ExaTools
+
+# Initialize E2B
+manager = SandboxManager(api_key=None, default_timeout=360)
+e2b_toolkit = E2BToolkit(manager, auto_create_default=False)
+
+# Build code agent with multiple tools
+code_agent_tools = [
+    MCPTools(transport="streamable-http", url="https://mcp.context7.com/mcp"),
+    e2b_toolkit,
+    ExaTools(),
+]
+
+if FIRECRAWL_API_KEY:
+    firecrawl_url = f"https://mcp.firecrawl.dev/{FIRECRAWL_API_KEY}/v2/mcp"
+    code_agent_tools.append(
+        MCPTools(transport="streamable-http", url=firecrawl_url)
+    )
+
+code_agent = Agent(
+    id="code-agent",
+    name="Code Agent",
+    role="Designing and executing complex code",
+    model=OpenAILike(
+        id="gpt-5",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY,
+    ),
+    tools=code_agent_tools,
+    instructions="""
+    # E2B Sandbox Usage & Initialization Protocol
+    
+    The E2B sandbox allows you to run code and perform programmatic operations.
+    You must create the sandbox before using it if no sandboxes are running.
+    
+    - Do not use timeout greater than 1 hour
+    - Prefer shorter timeouts based on usage
+    
+    **Capabilities**:
+    1. Execute Python code
+    2. Run shell/terminal commands
+    3. Work with files
+    4. Generate artifacts (PNG images, chart data)
+    5. Host temporary servers with public URLs
+    """
+)
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Timeout Management">
+    - Set timeouts based on expected execution time
+    - Use shorter timeouts (60-300s) for quick tasks
+    - Maximum timeout is 1 hour (3600s)
+    - Consider background execution for long-running tasks
+  </Accordion>
+
+  <Accordion title="Resource Cleanup">
+    - Always shutdown sandboxes when done
+    - Use `shutdown_all_sandboxes()` for bulk cleanup
+    - Monitor active sandboxes with `list_managed_sandboxes()`
+    - Set metadata for easier tracking
+  </Accordion>
+
+  <Accordion title="Error Handling">
+    - Check `status` field in all responses
+    - Handle "error" status with proper error messages
+    - Use try-except when calling toolkit methods
+    - Monitor job status for background tasks
+  </Accordion>
+
+  <Accordion title="Multi-Sandbox Scenarios">
+    - Create separate sandboxes for isolated workloads
+    - Use `run_in_all_sandboxes()` for parallel execution
+    - Set descriptive metadata for each sandbox
+    - Track sandbox IDs for targeted operations
+  </Accordion>
+</AccordionGroup>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Code Execution" icon="terminal" href="/tools/code-execution">
+    Learn about code execution patterns with E2B and Groq Compound
+  </Card>
+  <Card title="MCP Tools" icon="plug" href="/tools/mcp-tools">
+    Combine E2B with Model Context Protocol tools
+  </Card>
+</CardGroup>

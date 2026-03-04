@@ -1,0 +1,384 @@
+---
+title: Creating Custom Agents
+description: Guide to building and integrating new specialized agents
+---
+
+## Overview
+
+Custom agents extend Junkie's capabilities by adding specialized skills to the team. This guide shows how to create, configure, and integrate new agents.
+
+## Agent Anatomy
+
+An agent in Junkie consists of:
+
+1. **Identity**: ID, name, and role
+2. **Model**: LLM configuration
+3. **Tools**: Functions the agent can call
+4. **Instructions**: System prompt and behavior guidelines
+5. **Context**: Date/time awareness and timezone
+
+## Basic Agent Structure
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAILike
+
+custom_agent = Agent(
+    id="my-agent",                    # Unique identifier
+    name="My Custom Agent",           # Display name
+    role="Brief description of role", # What this agent does
+    model=OpenAILike(
+        id="model-name",
+        base_url=PROVIDER,
+        api_key=API_KEY,
+    ),
+    tools=[MyTool1(), MyTool2()],     # Agent's capabilities
+    instructions="""Detailed instructions for the agent""",
+    add_datetime_to_context=True,     # Include current time
+    timezone_identifier="Asia/Kolkata",
+)
+```
+
+## Step-by-Step: Creating an Agent
+
+### 1. Define Agent Purpose
+
+Determine what specialized task your agent will handle. Examples from Junkie:
+
+- **Code Agent**: Sandbox execution and file operations
+- **Perplexity Agent**: Real-time web research
+- **Context Q&A Agent**: Chat history analysis
+
+### 2. Choose the Right Model
+
+Select a model based on your agent's requirements:
+
+```python
+# For fast, short tasks (like Groq Compound)
+model=OpenAILike(
+    id="groq/compound",
+    max_tokens=8000,
+    base_url="https://api.groq.com/openai/v1",
+    api_key=GROQ_API_KEY
+)
+
+# For long-context tasks (like Context Q&A)
+model=OpenAILike(
+    id="gemini-2.0-flash-exp",
+    max_tokens=8000,
+    temperature=0.3,  # Lower for factual recall
+    base_url=PROVIDER,
+    api_key=CUSTOM_PROVIDER_API_KEY,
+)
+
+# For advanced reasoning (like Code Agent)
+model=OpenAILike(
+    id="gpt-5",
+    base_url=PROVIDER,
+    api_key=CUSTOM_PROVIDER_API_KEY,
+)
+```
+
+### 3. Select or Create Tools
+
+Tools define what your agent can do:
+
+```python
+# Use existing tools
+from agno.tools.calculator import CalculatorTools
+from agno.tools.exa import ExaTools
+from tools.history_tools import HistoryTools
+
+tools = [CalculatorTools(), ExaTools(), HistoryTools()]
+
+# Add MCP tools
+from agno.tools.mcp import MCPTools
+
+tools.append(
+    MCPTools(transport="streamable-http", url="https://your-mcp-server.com/mcp")
+)
+
+# Add conditional tools
+if SOME_API_KEY:
+    tools.append(ConditionalTool(api_key=SOME_API_KEY))
+```
+
+See existing tools in:
+- `tools/e2b_tools.py` - Sandbox operations
+- `tools/history_tools.py` - Chat history retrieval
+- `tools/bio_tools.py` - User information
+
+### 4. Write Instructions
+
+Instructions guide the agent's behavior:
+
+```python
+instructions="""You are **My Custom Agent**.
+
+# Purpose
+You specialize in [specific task domain].
+
+# Capabilities
+- [Capability 1]
+- [Capability 2]
+- [Capability 3]
+
+# Tool Usage
+- Use Tool1 for [purpose]
+- Use Tool2 when [condition]
+- IMPORTANT: Always [critical guideline]
+
+# Response Format
+- Be [concise/detailed/technical]
+- Include [sources/timestamps/examples]
+- Avoid [common pitfalls]
+
+# Special Considerations
+- [Any domain-specific rules]
+- [Error handling guidelines]
+- [Edge cases to watch for]
+"""
+```
+
+**Best practices:**
+
+- Start with agent identity and purpose
+- List capabilities clearly
+- Provide tool usage guidelines
+- Include critical instructions in CAPS
+- Specify response format expectations
+
+### 5. Configure Context Awareness
+
+```python
+add_datetime_to_context=True,      # Include current date/time
+timezone_identifier="Asia/Kolkata", # User's timezone
+```
+
+This enables:
+- Time-sensitive responses
+- Understanding message timestamps
+- Date calculations
+
+## Integration into Team
+
+Once created, add your agent to the team:
+
+```python
+# agent/agent_factory.py
+
+def create_team_for_user(user_id: str, client=None):
+    model = create_model(user_id)
+    
+    # Create your custom agent
+    my_custom_agent = Agent(
+        id="custom-agent",
+        name="Custom Agent",
+        role="Specialized task handling",
+        model=model,
+        tools=[CustomTool()],
+        instructions="Your instructions here",
+        add_datetime_to_context=True,
+        timezone_identifier="Asia/Kolkata",
+    )
+    
+    # Add to agents list
+    agents = [
+        perplexity_agent,
+        compound_agent,
+        code_agent,
+        context_qna_agent,
+        my_custom_agent,  # Add here
+    ]
+    
+    # Create team with new agent
+    team = Team(
+        name="Hero Team",
+        model=model,
+        db=db,
+        members=agents,  # Include your agent
+        tools=[BioTools(client=client), CalculatorTools()],
+        instructions=get_prompt(),
+        memory_manager=memory_manager,
+        # ... other config
+    )
+    
+    return model, team
+```
+
+## Delegation Configuration
+
+Update the Team Leader's delegation hierarchy in `system_prompt.md`:
+
+```markdown
+## Delegation Hierarchy
+
+1. **Deep research / real-time web data** → delegate to `pplx-agent`
+2. **Short code execution / math** → delegate to `groq-compound`
+3. **Complex code / sandboxed execution** → delegate to `code-agent`
+4. **Chat history / thread analysis** → delegate to `context-qna-agent`
+5. **Your new task type** → delegate to `custom-agent`  # Add this
+6. **MCP / platform-specific** → delegate to `mcp_agent`
+```
+
+## Example: Creating a Database Agent
+
+Here's a complete example:
+
+```python
+# 1. Create custom tool (tools/database_tools.py)
+from agno.tools import Tool
+
+class DatabaseTools(Tool):
+    def __init__(self, db_url: str):
+        super().__init__(name="DatabaseTools")
+        self.db_url = db_url
+    
+    def query_database(self, sql: str) -> dict:
+        """Execute SQL query and return results."""
+        # Implementation
+        pass
+    
+    def get_schema(self, table_name: str) -> dict:
+        """Get table schema."""
+        # Implementation
+        pass
+
+# 2. Create agent (agent/agent_factory.py)
+from tools.database_tools import DatabaseTools
+
+database_agent = Agent(
+    id="db-agent",
+    name="Database Agent",
+    role="Querying and analyzing database information",
+    model=OpenAILike(
+        id="gpt-5",
+        base_url=PROVIDER,
+        api_key=CUSTOM_PROVIDER_API_KEY,
+    ),
+    tools=[DatabaseTools(db_url=POSTGRES_URL)],
+    add_datetime_to_context=True,
+    timezone_identifier="Asia/Kolkata",
+    instructions="""You are **Database Agent**.
+    
+    You specialize in querying and analyzing database information.
+    
+    # Tools
+    - Use `query_database` to execute SQL queries
+    - Use `get_schema` to understand table structure
+    
+    # Guidelines
+    - ALWAYS check schema before querying
+    - Use parameterized queries to prevent SQL injection
+    - Limit results to 100 rows unless explicitly requested
+    - Explain query results in plain language
+    
+    # Response Format
+    - Show the SQL query used
+    - Present results in tables when appropriate
+    - Include row counts and any warnings
+    """
+)
+
+# 3. Add to team
+agents = [
+    perplexity_agent,
+    compound_agent,
+    code_agent,
+    context_qna_agent,
+    database_agent,  # New agent
+]
+```
+
+## Testing Your Agent
+
+1. **Verify initialization:**
+   ```python
+   print(f"Agent ID: {database_agent.id}")
+   print(f"Tools: {[tool.name for tool in database_agent.tools]}")
+   ```
+
+2. **Test in isolation:**
+   ```python
+   response = await database_agent.run(
+       "What tables are in the database?"
+   )
+   print(response.content)
+   ```
+
+3. **Test delegation:**
+   ```python
+   team_response = await team.run(
+       "Query the users table and show me the schema"
+   )
+   # Should delegate to database_agent
+   ```
+
+## Best Practices
+
+### 1. Single Responsibility
+
+Each agent should have one clear purpose:
+
+✅ **Good**: "Code Agent" - handles all sandbox execution  
+❌ **Bad**: "Helper Agent" - does many unrelated tasks
+
+### 2. Appropriate Model Selection
+
+- **Fast models** (Groq): Quick, simple tasks
+- **Long-context models** (Gemini): Large data analysis
+- **Advanced models** (GPT-5): Complex reasoning
+
+### 3. Tool Organization
+
+```python
+# Group related tools
+code_tools = [e2b_toolkit, ExaTools(), MCPTools(...)]
+research_tools = [ExaTools(), WikipediaTools()]
+history_tools = [HistoryTools(), BioTools()]
+```
+
+### 4. Clear Instructions
+
+- Use markdown formatting
+- Include examples
+- Highlight critical rules with CAPS
+- Specify error handling
+
+### 5. Resource Management
+
+If your agent uses external resources:
+
+```python
+class MyAgent:
+    async def cleanup(self):
+        """Called when agent is evicted from cache."""
+        await self.close_connections()
+        self.release_resources()
+```
+
+## Advanced: Conditional Agents
+
+Create agents only when needed:
+
+```python
+def create_team_for_user(user_id: str, client=None):
+    agents = [perplexity_agent, compound_agent, code_agent]
+    
+    # Add MCP agent if tools available
+    mcp_tools = get_mcp_tools()
+    if mcp_tools:
+        agents.append(create_mcp_agent(mcp_tools))
+    
+    # Add database agent if user has access
+    if user_has_db_access(user_id):
+        agents.append(create_database_agent(user_id))
+    
+    return Team(members=agents, ...)
+```
+
+## Next Steps
+
+- [System Prompts](/agents/system-prompts) - Configure agent behavior
+- [Memory Management](/agents/memory-management) - Add memory to agents
+- [E2B Tools](/tools/e2b-sandbox) - Create custom tools

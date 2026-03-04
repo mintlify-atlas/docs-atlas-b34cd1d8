@@ -1,0 +1,592 @@
+---
+title: Troubleshooting
+description: Common deployment issues, debugging tips, and error handling
+---
+
+## Overview
+
+This guide covers common issues encountered when deploying Junkie and how to resolve them.
+
+## Docker Issues
+
+### Build Fails with Git Dependency Error
+
+**Error:**
+```
+ERROR: Could not find a version that satisfies the requirement discord.py-self
+```
+
+**Cause**: The `discord.py-self` package is installed from GitHub and requires `git`.
+
+**Solution**: The Dockerfile already includes git installation. If you still see this error:
+
+```bash
+# Clear Docker cache
+docker builder prune
+
+# Rebuild without cache
+docker build --no-cache -t junkie:latest .
+```
+
+**Dockerfile fix** (`Dockerfile:8-10`):
+```dockerfile
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+```
+
+### Container Exits Immediately
+
+**Symptoms**: Container starts then stops within seconds.
+
+**Debug steps:**
+
+1. **Check logs:**
+   ```bash
+   docker logs junkie-bot
+   ```
+
+2. **Run interactively:**
+   ```bash
+   docker run -it --env-file .env junkie:latest /bin/bash
+   # Then manually run: python main.py
+   ```
+
+3. **Common causes:**
+   - Missing environment variables
+   - Invalid database connection
+   - Missing API keys
+   - Python import errors
+
+### uv Installation Fails
+
+**Error:**
+```
+ERROR: pip install uv failed
+```
+
+**Solution**: Use a specific version:
+
+```dockerfile
+RUN pip install uv==0.1.0
+```
+
+Or use pip directly without uv:
+
+```dockerfile
+RUN pip install -r requirements.txt
+```
+
+## Environment Variable Issues
+
+### Variables Not Loading
+
+**Symptoms**: Application behaves as if environment variables aren't set.
+
+**Debug steps:**
+
+1. **Verify .env file location:**
+   ```bash
+   ls -la .env
+   # Should be in project root
+   ```
+
+2. **Check file syntax:**
+   ```bash
+   cat .env
+   # Ensure no spaces around = signs
+   # Correct: POSTGRES_URL=postgresql://...
+   # Wrong:   POSTGRES_URL = postgresql://...
+   ```
+
+3. **Test loading:**
+   ```python
+   from dotenv import load_dotenv
+   import os
+   
+   load_dotenv()
+   print(os.getenv("POSTGRES_URL"))
+   ```
+
+4. **Docker: Pass via --env-file:**
+   ```bash
+   docker run --env-file .env junkie:latest
+   ```
+
+### Missing Required Variables
+
+**Error:**
+```
+KeyError: 'POSTGRES_URL'
+```
+
+**Solution**: Check all required variables are set (`core/config.py`):
+
+```bash
+# Minimum required
+POSTGRES_URL=postgresql://user:pass@host:port/db
+GROQ_API_KEY=gsk_...
+CUSTOM_PROVIDER=groq
+CUSTOM_MODEL=openai/gpt-oss-120b
+```
+
+**Validation script:**
+
+```python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+required = ["POSTGRES_URL", "GROQ_API_KEY"]
+missing = [v for v in required if not os.getenv(v)]
+
+if missing:
+    raise ValueError(f"Missing: {missing}")
+```
+
+## Database Connection Issues
+
+### Connection Refused
+
+**Error:**
+```
+psycopg2.OperationalError: could not connect to server: Connection refused
+```
+
+**Debug steps:**
+
+1. **Verify connection string format:**
+   ```bash
+   postgresql://[user]:[password]@[host]:[port]/[database]
+   ```
+
+2. **Test connection:**
+   ```bash
+   psql "$POSTGRES_URL"
+   ```
+
+3. **Check network access:**
+   ```bash
+   # Test if host is reachable
+   ping db.example.com
+   
+   # Test if port is open
+   nc -zv db.example.com 5432
+   ```
+
+4. **Common issues:**
+   - Database not running
+   - Firewall blocking port 5432
+   - Incorrect host/port
+   - Database not accepting external connections
+
+### Authentication Failed
+
+**Error:**
+```
+psycopg2.OperationalError: FATAL: password authentication failed
+```
+
+**Solutions:**
+
+1. **Verify credentials:**
+   ```bash
+   # URL-encode special characters in password
+   # Example: p@ssw0rd! -> p%40ssw0rd%21
+   ```
+
+2. **Test manually:**
+   ```bash
+   psql -h host -p 5432 -U user -d database
+   # Enter password when prompted
+   ```
+
+3. **Check user permissions:**
+   ```sql
+   -- As database admin
+   GRANT ALL PRIVILEGES ON DATABASE junkie TO junkie_user;
+   ```
+
+### SSL Required
+
+**Error:**
+```
+psycopg2.OperationalError: SSL connection is required
+```
+
+**Solution**: Add `?sslmode=require` to connection string:
+
+```bash
+POSTGRES_URL=postgresql://user:pass@host:5432/db?sslmode=require
+```
+
+## API Key Issues
+
+### Invalid API Key
+
+**Error:**
+```
+openai.error.AuthenticationError: Invalid API key
+```
+
+**Debug steps:**
+
+1. **Check key format:**
+   ```bash
+   echo $GROQ_API_KEY
+   # Should start with gsk_ for Groq
+   # No extra spaces or quotes
+   ```
+
+2. **Verify key is active:**
+   - Check provider dashboard
+   - Ensure key hasn't been revoked
+   - Check usage limits
+
+3. **Test API call:**
+   ```bash
+   curl https://api.groq.com/openai/v1/models \
+     -H "Authorization: Bearer $GROQ_API_KEY"
+   ```
+
+### Rate Limit Exceeded
+
+**Error:**
+```
+openai.error.RateLimitError: Rate limit exceeded
+```
+
+**Solutions:**
+
+1. **Reduce agent retries:**
+   ```bash
+   AGENT_RETRIES=1  # Lower from default 2
+   ```
+
+2. **Reduce max concurrent agents:**
+   ```bash
+   MAX_AGENTS=50  # Lower from default 100
+   ```
+
+3. **Upgrade API plan** or wait for rate limit reset
+
+### Provider Not Found
+
+**Error:**
+```
+ValueError: Unknown provider: xyz
+```
+
+**Solution**: Check `CUSTOM_PROVIDER` value (`core/config.py:10`):
+
+```bash
+# Valid providers (depends on your setup)
+CUSTOM_PROVIDER=groq
+# Or
+CUSTOM_PROVIDER=openai
+```
+
+## Phoenix Tracing Issues
+
+### Tracing Not Working
+
+**Symptoms**: No traces appear in Phoenix dashboard.
+
+**Debug steps:**
+
+1. **Check if tracing is enabled:**
+   ```bash
+   echo $TRACING  # Should be "true"
+   ```
+
+2. **Verify API key:**
+   ```bash
+   echo $PHOENIX_API_KEY  # Should not be empty
+   ```
+
+3. **Check logs for initialization:**
+   ```bash
+   docker logs junkie-bot | grep -i phoenix
+   # Should see: "Phoenix tracing enabled (project: ...)"
+   ```
+
+4. **Common issues:**
+   - `TRACING=false` or not set
+   - Missing `PHOENIX_API_KEY`
+   - `arize-phoenix` package missing from `requirements.txt`
+   - Network issues
+
+**Source**: `core/observability.py:7-55`
+
+### Phoenix Import Error
+
+**Error:**
+```
+ImportError: No module named 'phoenix'
+```
+
+**Solution**: Verify `requirements.txt` includes (`requirements.txt:3-7`):
+
+```txt
+arize-phoenix
+langtrace-python-sdk
+openinference-instrumentation-agno
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+```
+
+Reinstall dependencies:
+
+```bash
+pip install -r requirements.txt
+# Or rebuild Docker image
+docker build -t junkie:latest .
+```
+
+### Phoenix High Overhead
+
+**Symptoms**: Application is slow with tracing enabled.
+
+**Solutions:**
+
+1. **Ensure batching is enabled** (`core/observability.py:38`):
+   ```python
+   tracer_provider = register(
+       batch=True,  # Must be True
+   )
+   ```
+
+2. **Sample traces:**
+   ```python
+   # Only trace 10% of requests
+   import random
+   if random.random() < 0.1:
+       setup_phoenix_tracing()
+   ```
+
+3. **Disable in development:**
+   ```bash
+   TRACING=false  # For local dev
+   ```
+
+## Railway Deployment Issues
+
+### Build Fails on Railway
+
+**Debug steps:**
+
+1. **Check build logs:**
+   - Go to "Deployments" tab
+   - Click failed deployment
+   - Review build output
+
+2. **Common causes:**
+   - Missing dependencies in `requirements.txt`
+   - Invalid Dockerfile syntax
+   - Out of memory during build
+
+**Solution**: Test build locally first:
+
+```bash
+docker build -t junkie:latest .
+```
+
+### Service Won't Start
+
+**Debug steps:**
+
+1. **Check runtime logs:**
+   - Go to "Logs" tab
+   - Look for error messages
+
+2. **Verify environment variables:**
+   - Go to "Variables" tab
+   - Ensure all required vars are set
+
+3. **Test locally with same environment:**
+   ```bash
+   # Export Railway variables
+   export POSTGRES_URL="..."
+   export GROQ_API_KEY="..."
+   
+   # Run locally
+   python main.py
+   ```
+
+### Database Connection Fails on Railway
+
+**Issue**: Railway's internal PostgreSQL uses private networking.
+
+**Solution**: Use Railway's provided `DATABASE_URL`:
+
+1. Click on PostgreSQL service
+2. Copy "Database URL"
+3. Set as `POSTGRES_URL` in your service variables
+
+**Format:**
+```bash
+postgresql://postgres:[password]@[internal-host]:5432/railway
+```
+
+## Performance Issues
+
+### High Memory Usage
+
+**Debug:**
+
+```bash
+# Check container memory
+docker stats junkie-bot
+```
+
+**Solutions:**
+
+1. **Reduce max agents:**
+   ```bash
+   MAX_AGENTS=50  # Lower from 100
+   ```
+
+2. **Disable debug mode:**
+   ```bash
+   DEBUG_MODE=false
+   ```
+
+3. **Reduce context limits:**
+   ```bash
+   CONTEXT_AGENT_MAX_MESSAGES=25000  # Lower from 50000
+   ```
+
+### Slow Response Times
+
+**Debug steps:**
+
+1. **Check Phoenix traces** for bottlenecks
+2. **Profile database queries**
+3. **Monitor API latencies**
+
+**Solutions:**
+
+1. **Reduce temperature** (faster but less creative):
+   ```bash
+   MODEL_TEMPERATURE=0.1  # Lower from 0.3
+   ```
+
+2. **Use faster model:**
+   ```bash
+   CUSTOM_MODEL=gemini-2.5-flash-lite  # Faster than GPT-4
+   ```
+
+3. **Optimize agent retries:**
+   ```bash
+   AGENT_RETRIES=1  # Lower from 2
+   ```
+
+## Debugging Tips
+
+### Enable Debug Mode
+
+```bash
+DEBUG_MODE=true
+DEBUG_LEVEL=3  # Maximum verbosity
+```
+
+**Warning**: Only use in development. High verbosity impacts performance.
+
+### Check Application Logs
+
+```bash
+# Docker
+docker logs -f junkie-bot
+
+# Railway
+# Use web dashboard Logs tab
+
+# Local
+python main.py 2>&1 | tee app.log
+```
+
+### Test Components Individually
+
+```python
+# Test database connection
+import psycopg2
+from core.config import POSTGRES_URL
+
+conn = psycopg2.connect(POSTGRES_URL)
+print("Database connected!")
+
+# Test API key
+import openai
+from core.config import GROQ_API_KEY
+
+client = openai.OpenAI(api_key=GROQ_API_KEY)
+print("API key valid!")
+
+# Test Phoenix
+from core.observability import setup_phoenix_tracing
+
+tracer = setup_phoenix_tracing()
+print(f"Phoenix initialized: {tracer is not None}")
+```
+
+### Use Interactive Container
+
+```bash
+# Start container with shell
+docker run -it --env-file .env junkie:latest /bin/bash
+
+# Inside container:
+python -c "import core.config; print(core.config.POSTGRES_URL)"
+python main.py
+```
+
+## Getting Help
+
+If you're still stuck:
+
+1. **Check logs** with `DEBUG_MODE=true`
+2. **Review configuration** in `core/config.py`
+3. **Test dependencies** are installed correctly
+4. **Verify environment variables** are loaded
+5. **Check network connectivity** to external services
+
+## Common Error Messages
+
+### ModuleNotFoundError
+
+**Error:**
+```
+ModuleNotFoundError: No module named 'xyz'
+```
+
+**Solution**: Rebuild dependencies:
+
+```bash
+pip install -r requirements.txt
+# Or rebuild Docker image
+```
+
+### ImportError: discord.py-self
+
+**Error:**
+```
+ImportError: No module named 'discord'
+```
+
+**Solution**: Ensure Git is installed before building (`Dockerfile:8-10`).
+
+### OSError: [Errno 28] No space left on device
+
+**Solution**: Clean up Docker:
+
+```bash
+docker system prune -a
+docker volume prune
+```
+
+## Next Steps
+
+- [Environment Setup](/deployment/environment-setup) - Review configuration
+- [Monitoring](/deployment/monitoring) - Set up observability
+- [Docker Deployment](/deployment/docker) - Review Docker setup

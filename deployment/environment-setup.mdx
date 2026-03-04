@@ -1,0 +1,319 @@
+---
+title: Environment Setup
+description: Configure production environment variables and secrets management
+---
+
+## Overview
+
+Junkie uses environment variables for configuration, loaded via `python-dotenv` from a `.env` file or system environment. All configuration is centralized in `core/config.py`.
+
+## Required Variables
+
+These variables are essential for Junkie to function:
+
+### Database
+
+```bash
+# PostgreSQL connection string
+POSTGRES_URL="postgresql://user:password@host:port/database"
+```
+
+**Format**: Standard PostgreSQL connection URL
+
+**Example**:
+```bash
+POSTGRES_URL="postgresql://junkie_user:secure_pass@db.example.com:5432/junkie_db"
+```
+
+### Model Provider
+
+```bash
+# Primary LLM provider (default: groq)
+CUSTOM_PROVIDER="groq"
+
+# Model name
+CUSTOM_MODEL="openai/gpt-oss-120b"
+
+# Provider API key (if using custom provider)
+CUSTOM_PROVIDER_API_KEY="your-api-key"
+
+# Groq API key (if using Groq)
+GROQ_API_KEY="gsk_..."
+```
+
+**Defined in**: `core/config.py:10-14`
+
+## Optional Variables
+
+### Agent Configuration
+
+```bash
+# Model temperature (default: 0.3)
+MODEL_TEMPERATURE="0.3"
+
+# Model top_p (default: 0.9)
+MODEL_TOP_P="0.9"
+
+# Agent history runs to keep (default: 1)
+AGENT_HISTORY_RUNS="1"
+
+# Agent retry attempts (default: 2)
+AGENT_RETRIES="2"
+
+# Maximum concurrent agents (default: 100)
+MAX_AGENTS="100"
+```
+
+**Defined in**: `core/config.py:17-23`
+
+### Debug Configuration
+
+```bash
+# Enable debug mode (default: false)
+DEBUG_MODE="false"
+
+# Debug level 1-3 (default: 1)
+DEBUG_LEVEL="1"
+```
+
+**Defined in**: `core/config.py:21-22`
+
+**Important**: Set `DEBUG_MODE=false` in production to reduce log verbosity and improve performance.
+
+### Tracing Configuration
+
+```bash
+# Enable Phoenix tracing (default: false)
+TRACING="true"
+
+# Phoenix API key (required if TRACING=true)
+PHOENIX_API_KEY="your-phoenix-api-key"
+
+# Phoenix endpoint (default: Arize hosted)
+PHOENIX_ENDPOINT="https://app.phoenix.arize.com/s/your-space/v1/traces"
+
+# Phoenix project name (default: junkie)
+PHOENIX_PROJECT_NAME="junkie-production"
+```
+
+**Defined in**: `core/config.py:26-32`
+
+See [Monitoring](/deployment/monitoring) for detailed Phoenix setup.
+
+### Context Agent Configuration
+
+```bash
+# Model for context agent (default: gemini-2.5-flash-lite)
+CONTEXT_AGENT_MODEL="gemini-2.5-flash-lite"
+
+# Max messages for context agent (default: 50000)
+CONTEXT_AGENT_MAX_MESSAGES="50000"
+
+# Team leader context limit (default: 100)
+TEAM_LEADER_CONTEXT_LIMIT="100"
+```
+
+**Defined in**: `core/config.py:38-40`
+
+### MCP Configuration
+
+```bash
+# MCP server URLs (comma-separated)
+MCP_URLS="http://mcp1.example.com,http://mcp2.example.com"
+```
+
+**Defined in**: `core/config.py:35`
+
+### Additional API Keys
+
+```bash
+# Firecrawl API key (for web scraping)
+FIRECRAWL_API_KEY="fc-..."
+
+# Add other service-specific keys as needed
+```
+
+**Defined in**: `core/config.py:14`
+
+## Environment File Example
+
+Create a `.env` file in your project root:
+
+```bash
+# Database
+POSTGRES_URL=postgresql://user:password@localhost:5432/junkie
+
+# Model Provider
+CUSTOM_PROVIDER=groq
+CUSTOM_MODEL=openai/gpt-oss-120b
+GROQ_API_KEY=gsk_your_api_key_here
+
+# Agent Configuration
+MODEL_TEMPERATURE=0.3
+MODEL_TOP_P=0.9
+AGENT_RETRIES=2
+MAX_AGENTS=100
+
+# Debug (disable in production)
+DEBUG_MODE=false
+DEBUG_LEVEL=1
+
+# Tracing (enable for production monitoring)
+TRACING=true
+PHOENIX_API_KEY=your_phoenix_api_key
+PHOENIX_PROJECT_NAME=junkie-production
+
+# Optional APIs
+FIRECRAWL_API_KEY=fc_your_key
+```
+
+## Loading Environment Variables
+
+Junkie uses `python-dotenv` to load variables automatically:
+
+```python
+# From core/config.py
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # Loads .env file
+
+# Access variables
+POSTGRES_URL = os.getenv("POSTGRES_URL", "")
+```
+
+**Source**: `core/config.py:1-4`
+
+## Secrets Management
+
+### Local Development
+
+1. Create `.env` file in project root
+2. Add `.env` to `.gitignore` (never commit secrets!)
+3. Share `.env.example` template with team
+
+### Production Deployment
+
+#### Railway
+
+1. Go to project settings
+2. Navigate to "Variables" tab
+3. Add each environment variable
+4. Values are encrypted at rest
+
+#### Docker
+
+Pass variables via:
+
+**Environment file:**
+```bash
+docker run --env-file .env junkie:latest
+```
+
+**Direct variables:**
+```bash
+docker run -e POSTGRES_URL="..." -e GROQ_API_KEY="..." junkie:latest
+```
+
+**Docker secrets** (Swarm/Compose):
+```yaml
+secrets:
+  postgres_url:
+    external: true
+  groq_api_key:
+    external: true
+
+services:
+  junkie:
+    image: junkie:latest
+    secrets:
+      - postgres_url
+      - groq_api_key
+```
+
+#### GitHub Actions
+
+For CI/CD workflows:
+
+1. Go to repository → Settings → Secrets
+2. Add secrets (e.g., `COOLIFY_WEBHOOK`, `COOLIFY_TOKEN`)
+3. Reference in workflow: `${{ secrets.SECRET_NAME }}`
+
+**Example**: `.github/workflows/main.yml:79-80`
+
+### Best Practices
+
+1. **Never commit secrets** - Use `.gitignore` for `.env` files
+2. **Use separate environments** - Different keys for dev/staging/prod
+3. **Rotate keys regularly** - Update API keys periodically
+4. **Minimal permissions** - Use read-only keys where possible
+5. **Audit access** - Track who has access to production secrets
+
+## Validation
+
+Before deploying, validate your configuration:
+
+```python
+# Quick validation script
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+required = [
+    "POSTGRES_URL",
+    "GROQ_API_KEY",
+]
+
+missing = [var for var in required if not os.getenv(var)]
+
+if missing:
+    print(f"Missing required variables: {missing}")
+    exit(1)
+
+print("All required variables set!")
+```
+
+## Troubleshooting
+
+### Variables Not Loading
+
+**Check `.env` location:**
+- Must be in project root (same directory as `main.py`)
+- Or set `DOTENV_PATH` to custom location
+
+**Check syntax:**
+```bash
+# Correct
+POSTGRES_URL=postgresql://...
+
+# Incorrect (no spaces around =)
+POSTGRES_URL = postgresql://...
+```
+
+### Database Connection Fails
+
+**Verify connection string format:**
+```bash
+postgresql://[user]:[password]@[host]:[port]/[database]
+```
+
+**Test connection:**
+```bash
+psql "$POSTGRES_URL"
+```
+
+### API Key Errors
+
+1. Check key format (no extra spaces or quotes)
+2. Verify key is active in provider dashboard
+3. Test key with simple API call
+4. Check rate limits and quotas
+
+See [Troubleshooting](/deployment/troubleshooting) for more debugging steps.
+
+## Next Steps
+
+- [Docker Deployment](/deployment/docker) - Build and run containers
+- [Railway Deployment](/deployment/railway) - Deploy to Railway
+- [Monitoring](/deployment/monitoring) - Set up Phoenix tracing

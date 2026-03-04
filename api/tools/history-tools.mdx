@@ -1,0 +1,178 @@
+---
+title: History Tools
+description: Chat history retrieval and analysis
+---
+
+The History Tools provide access to Discord chat history for context-aware responses.
+
+## HistoryTools
+
+Toolkit for reading and analyzing chat history.
+
+```python
+class HistoryTools(Toolkit):
+    def __init__(self)
+```
+
+No parameters required. Automatically uses execution context to determine current channel.
+
+## read_chat_history
+
+Read chat history for the current channel.
+
+```python
+async def read_chat_history(self, limit: int = 2000) -> str
+```
+
+<ParamField path="limit" type="int" default="2000">
+  Maximum number of messages to retrieve
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Formatted chat history as a string, or error message
+</ResponseField>
+
+### Behavior
+
+1. Gets channel from execution context
+2. Fetches recent messages from cache and database
+3. Falls back to database-only if channel object unavailable
+4. Returns formatted history with timestamps and authors
+
+### Message Format
+
+Each message is formatted as:
+```
+2024-03-04 10:30:00 Username(user_id): Message content
+```
+
+### Example Usage
+
+```python
+from tools.history_tools import HistoryTools
+from core.execution_context import set_current_channel
+
+# Setup
+history_tools = HistoryTools()
+set_current_channel(message.channel)
+
+# Read history
+history = await history_tools.read_chat_history(limit=100)
+print(history)
+```
+
+### In Agent Context
+
+When used with agents, the tool is automatically available:
+
+```python
+from agno.agent import Agent
+from tools.history_tools import HistoryTools
+
+agent = Agent(
+    name="Context Agent",
+    tools=[HistoryTools()],
+    instructions="""Use read_chat_history to analyze conversations.
+    Always fetch at least 5000 messages on first try."""
+)
+
+# Agent can now call the tool
+result = await agent.arun(
+    "What did John say about the project yesterday?"
+)
+```
+
+### Error Handling
+
+Returns descriptive error messages:
+
+- **No context**: `"Error: No execution context found. Cannot determine channel."`
+- **No history**: `"No history found in database."`
+- **Fetch error**: `"Error fetching history: <error details>"`
+
+### Performance Considerations
+
+- Uses `get_recent_context()` which combines cache + database
+- Automatically fetches from Discord API if cache insufficient
+- Limits prevent excessive memory usage
+- Async operations don't block other tasks
+
+### Data Sources
+
+The tool retrieves messages from:
+
+1. **In-memory cache** (fastest, recent messages)
+2. **PostgreSQL database** (persistent storage)
+3. **Discord API** (fetches missing messages)
+
+### Recommended Limits
+
+- **Quick context**: 100-200 messages
+- **Conversation analysis**: 1000-2000 messages  
+- **Deep history search**: 5000+ messages
+- **Maximum**: 50000 (configurable via `CONTEXT_AGENT_MAX_MESSAGES`)
+
+## Integration Example
+
+Complete example with agent team:
+
+```python
+from agno.agent import Agent
+from agno.team import Team
+from tools.history_tools import HistoryTools
+from core.execution_context import set_current_channel
+
+# Create context QnA agent
+context_agent = Agent(
+    name="Chat Context Q&A",
+    role="Answering questions about users, topics, and past conversations",
+    model=model,
+    tools=[HistoryTools()],
+    instructions="""
+    You specialize in answering questions about chat history.
+    
+    IMPORTANT: Always fetch a minimum of 5000 messages on first try.
+    
+    Use the history to:
+    - Answer "who said what" questions
+    - Summarize discussions on specific topics
+    - Track when topics were last mentioned
+    - Identify user opinions and statements
+    - Provide context about past conversations
+    
+    Be precise with timestamps and attribute statements accurately.
+    """
+)
+
+# Use in team
+team = Team(
+    name="AI Team",
+    members=[context_agent],
+    model=model
+)
+
+# In message handler
+@bot.event
+async def on_message(message):
+    set_current_channel(message.channel)
+    
+    response = await team.arun(
+        "What did we discuss about AI last week?",
+        session_id=str(message.channel.id)
+    )
+    
+    await message.channel.send(response.content)
+```
+
+## Configuration
+
+Related environment variables:
+
+- `CONTEXT_AGENT_MAX_MESSAGES`: Maximum messages for context (default: 50000)
+- `POSTGRES_URL`: Database connection for persistent history
+
+## Dependencies
+
+- `core.database.get_messages`: Database query function
+- `core.execution_context`: Channel context tracking
+- `discord_bot.context_cache.get_recent_context`: Cache retrieval

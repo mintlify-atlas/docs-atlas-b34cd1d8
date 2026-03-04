@@ -1,0 +1,339 @@
+---
+title: Tracing & Observability
+description: Phoenix/Arize tracing setup for monitoring Junkie agents
+---
+
+Junkie supports distributed tracing through Phoenix/Arize for monitoring agent behavior, debugging issues, and analyzing performance.
+
+## Overview
+
+Phoenix tracing provides:
+
+- **Request tracking** - Trace every agent interaction
+- **Performance monitoring** - Measure latency and bottlenecks
+- **Debugging** - Inspect agent decisions and tool calls
+- **Analytics** - Understand usage patterns and model behavior
+
+Tracing is **opt-in** and disabled by default to minimize overhead.
+
+## Configuration
+
+### Environment Variables
+
+<ParamField path="TRACING" type="boolean" default="false">
+  Enable Phoenix tracing. Set to `true` to activate.
+  
+  ```bash
+  TRACING=true
+  ```
+</ParamField>
+
+<ParamField path="PHOENIX_API_KEY" type="string" required="when TRACING=true">
+  API key for authenticating with Phoenix/Arize.
+  
+  ```bash
+  PHOENIX_API_KEY=your_api_key_here
+  ```
+  
+  <Warning>
+  Tracing will be skipped if `PHOENIX_API_KEY` is not set, even when `TRACING=true`.
+  </Warning>
+</ParamField>
+
+<ParamField path="PHOENIX_ENDPOINT" type="string" default="https://app.phoenix.arize.com/s/maanyapatel145/v1/traces">
+  Phoenix trace collection endpoint URL.
+  
+  ```bash
+  PHOENIX_ENDPOINT=https://app.phoenix.arize.com/s/your_workspace/v1/traces
+  ```
+</ParamField>
+
+<ParamField path="PHOENIX_PROJECT_NAME" type="string" default="junkie">
+  Project name for organizing traces in Phoenix dashboard.
+  
+  ```bash
+  PHOENIX_PROJECT_NAME=my-junkie-bot
+  ```
+</ParamField>
+
+## Setup Process
+
+### 1. Installation
+
+Phoenix tracing requires the `phoenix` package:
+
+```bash
+pip install arize-phoenix
+```
+
+<Info>
+If the `phoenix` package is not installed, tracing will be automatically disabled with a warning.
+</Info>
+
+### 2. Enable Tracing
+
+Set environment variables in your `.env` file:
+
+```bash
+TRACING=true
+PHOENIX_API_KEY=your_phoenix_api_key
+PHOENIX_PROJECT_NAME=junkie-production
+```
+
+### 3. Initialization
+
+Tracing is initialized automatically on startup (`agent/agent_factory.py:42-44`):
+
+```python
+from core.observability import setup_phoenix_tracing
+
+setup_phoenix_tracing()
+```
+
+## Implementation Details
+
+### Lazy Initialization
+
+Phoenix is initialized lazily to avoid loading heavy dependencies when tracing is disabled:
+
+```python
+def setup_phoenix_tracing():
+    """Lazy initialization of Phoenix tracing with optimizations."""
+    global _phoenix_tracer
+    
+    if _phoenix_tracer is not None:
+        return _phoenix_tracer  # Already initialized
+    
+    if not TRACING_ENABLED:
+        return None
+    
+    try:
+        from phoenix.otel import register
+        # ... initialization code
+    except ImportError:
+        logger.warning("Phoenix package not installed")
+        return None
+```
+
+Reference: `core/observability.py:7-15`
+
+### Environment Setup
+
+Phoenix client headers and collector endpoint are configured automatically:
+
+```python
+if "PHOENIX_CLIENT_HEADERS" not in os.environ:
+    os.environ["PHOENIX_CLIENT_HEADERS"] = f"api_key={PHOENIX_API_KEY}"
+
+if "PHOENIX_COLLECTOR_ENDPOINT" not in os.environ:
+    os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = "https://app.phoenix.arize.com"
+```
+
+Reference: `core/observability.py:28-31`
+
+### Tracer Registration
+
+The Phoenix tracer is registered with performance optimizations:
+
+```python
+tracer_provider = register(
+    project_name=PHOENIX_PROJECT_NAME,
+    endpoint=PHOENIX_ENDPOINT,
+    auto_instrument=True,  # Automatically trace LLM calls
+    batch=True,            # Batch traces for better performance
+)
+```
+
+Reference: `core/observability.py:34-39`
+
+**Parameters:**
+- `project_name` - Organizes traces by project in Phoenix UI
+- `endpoint` - Where traces are sent
+- `auto_instrument=True` - Automatically captures LLM API calls
+- `batch=True` - Reduces overhead by batching trace exports
+
+## Error Handling
+
+### Missing API Key
+
+If `PHOENIX_API_KEY` is not set:
+
+```python
+if not PHOENIX_API_KEY:
+    logger.warning("PHOENIX_API_KEY not set, skipping Phoenix tracing")
+    _phoenix_tracer = False
+    return None
+```
+
+Reference: `core/observability.py:21-25`
+
+### Missing Package
+
+If `phoenix` package is not installed:
+
+```python
+except ImportError:
+    logger.warning("Phoenix tracing requested but 'phoenix' package not installed")
+    _phoenix_tracer = False
+    return None
+```
+
+Reference: `core/observability.py:46-50`
+
+### Initialization Failure
+
+Any other initialization errors are caught and logged:
+
+```python
+except Exception as e:
+    logger.error(f"Failed to initialize Phoenix tracing: {e}", exc_info=True)
+    _phoenix_tracer = False
+    return None
+```
+
+Reference: `core/observability.py:51-55`
+
+## Performance Optimization
+
+### Batching
+
+Traces are batched before export to reduce network overhead:
+
+```python
+register(
+    # ...
+    batch=True,  # Batch traces for better performance
+)
+```
+
+This prevents each agent action from triggering an immediate network request.
+
+### Conditional Import
+
+Phoenix is only imported when tracing is enabled:
+
+```python
+if not TRACING_ENABLED:
+    return None
+
+try:
+    from phoenix.otel import register  # Import only when needed
+    # ...
+```
+
+This keeps startup time fast when tracing is disabled.
+
+### Singleton Pattern
+
+Tracer is initialized once and cached:
+
+```python
+_phoenix_tracer = None
+
+def setup_phoenix_tracing():
+    global _phoenix_tracer
+    
+    if _phoenix_tracer is not None:
+        return _phoenix_tracer  # Return cached instance
+```
+
+## What Gets Traced
+
+With `auto_instrument=True`, Phoenix automatically traces:
+
+- **LLM API calls** - All requests to OpenAI-compatible APIs
+- **Model responses** - Completions, token usage, latency
+- **Tool calls** - Agent tool invocations and results
+- **Errors** - Exceptions and failures in agent operations
+
+## Viewing Traces
+
+Access traces through the Phoenix dashboard:
+
+1. Navigate to your Phoenix endpoint
+2. Select your project (configured via `PHOENIX_PROJECT_NAME`)
+3. View traces organized by:
+   - Timestamp
+   - Agent/model
+   - Latency
+   - Token usage
+   - Success/error status
+
+## Example Configurations
+
+<CodeGroup>
+```bash Tracing Disabled (Default)
+TRACING=false
+```
+
+```bash Tracing Enabled
+TRACING=true
+PHOENIX_API_KEY=your_api_key_here
+PHOENIX_PROJECT_NAME=junkie-prod
+PHOENIX_ENDPOINT=https://app.phoenix.arize.com/s/workspace/v1/traces
+```
+
+```bash Development Setup
+TRACING=true
+PHOENIX_API_KEY=dev_api_key
+PHOENIX_PROJECT_NAME=junkie-dev
+```
+</CodeGroup>
+
+## Troubleshooting
+
+### Tracing Not Working
+
+Check the following:
+
+1. **Environment variable is set correctly:**
+   ```bash
+   TRACING=true  # Not "True" or "TRUE"
+   ```
+
+2. **API key is configured:**
+   ```bash
+   PHOENIX_API_KEY=your_key_here
+   ```
+
+3. **Phoenix package is installed:**
+   ```bash
+   pip install arize-phoenix
+   ```
+
+4. **Check logs for warnings:**
+   Look for messages like:
+   - `"PHOENIX_API_KEY not set, skipping Phoenix tracing"`
+   - `"Phoenix package not installed"`
+   - `"Failed to initialize Phoenix tracing"`
+
+### High Overhead
+
+If tracing adds too much latency:
+
+1. Ensure `batch=True` is enabled (it is by default)
+2. Consider using a sampling strategy (not currently implemented)
+3. Disable tracing for high-frequency operations
+
+<Info>
+Tracing adds minimal overhead when batching is enabled, typically less than 50ms per request.
+</Info>
+
+## Best Practices
+
+1. **Use different projects for different environments:**
+   ```bash
+   # Production
+   PHOENIX_PROJECT_NAME=junkie-prod
+   
+   # Development
+   PHOENIX_PROJECT_NAME=junkie-dev
+   ```
+
+2. **Enable tracing in development for debugging**
+
+3. **Monitor token usage through traces to optimize costs**
+
+4. **Review error traces to identify and fix issues**
+
+5. **Keep tracing disabled in local development unless debugging**

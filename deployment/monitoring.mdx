@@ -1,0 +1,383 @@
+---
+title: Monitoring
+description: Phoenix tracing, logging configuration, and production observability
+---
+
+## Overview
+
+Junkie includes built-in observability through Phoenix tracing and structured logging. This allows you to monitor agent behavior, debug issues, and optimize performance in production.
+
+## Phoenix Tracing
+
+Phoenix (Arize) provides distributed tracing for LLM applications, tracking agent runs, model calls, and tool usage.
+
+### Configuration
+
+Phoenix tracing is configured via environment variables:
+
+```bash
+# Enable tracing
+TRACING=true
+
+# Phoenix API key (required)
+PHOENIX_API_KEY=your-phoenix-api-key
+
+# Phoenix endpoint (default: Arize hosted)
+PHOENIX_ENDPOINT=https://app.phoenix.arize.com/s/your-space/v1/traces
+
+# Project name (default: junkie)
+PHOENIX_PROJECT_NAME=junkie-production
+```
+
+**Defined in**: `core/config.py:26-32`
+
+### Setup Implementation
+
+The tracing setup is implemented in `core/observability.py`:
+
+```python
+import os
+import logging
+from core.config import TRACING_ENABLED, PHOENIX_API_KEY, PHOENIX_ENDPOINT, PHOENIX_PROJECT_NAME
+
+_phoenix_tracer = None
+
+def setup_phoenix_tracing():
+    """Lazy initialization of Phoenix tracing with optimizations."""
+    global _phoenix_tracer
+    
+    if _phoenix_tracer is not None:
+        return _phoenix_tracer  # Already initialized
+    
+    if not TRACING_ENABLED:
+        return None
+    
+    try:
+        # Import phoenix lazily to avoid importing heavy/optional deps when tracing is off
+        from phoenix.otel import register
+        
+        if not PHOENIX_API_KEY:
+            logger = logging.getLogger(__name__)
+            logger.warning("PHOENIX_API_KEY not set, skipping Phoenix tracing")
+            _phoenix_tracer = False
+            return None
+        
+        # Set environment variables for Arize Phoenix
+        if "PHOENIX_CLIENT_HEADERS" not in os.environ:
+            os.environ["PHOENIX_CLIENT_HEADERS"] = f"api_key={PHOENIX_API_KEY}"
+        if "PHOENIX_COLLECTOR_ENDPOINT" not in os.environ:
+            os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = "https://app.phoenix.arize.com"
+        
+        # Configure the Phoenix tracer with optimizations
+        tracer_provider = register(
+            project_name=PHOENIX_PROJECT_NAME,
+            endpoint=PHOENIX_ENDPOINT,
+            auto_instrument=True,
+            batch=True,  # Batch traces for better performance
+        )
+        
+        _phoenix_tracer = tracer_provider
+        logger = logging.getLogger(__name__)
+        logger.info(f"Phoenix tracing enabled (project: {PHOENIX_PROJECT_NAME})")
+        
+        return tracer_provider
+    except ImportError:
+        logger = logging.getLogger(__name__)
+        logger.warning("Phoenix tracing requested but 'phoenix' package not installed")
+        _phoenix_tracer = False
+        return None
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to initialize Phoenix tracing: {e}", exc_info=True)
+        _phoenix_tracer = False
+        return None
+```
+
+**Source**: `core/observability.py:7-55`
+
+### Key Features
+
+1. **Lazy Initialization**: Phoenix is only imported when tracing is enabled
+2. **Automatic Instrumentation**: `auto_instrument=True` traces LLM calls automatically
+3. **Batching**: `batch=True` improves performance by batching traces
+4. **Error Handling**: Graceful fallback if Phoenix is unavailable
+5. **Singleton Pattern**: Tracing is initialized once and reused
+
+### Using Phoenix
+
+#### Enable in Production
+
+```bash
+# In .env or Railway environment variables
+TRACING=true
+PHOENIX_API_KEY=your-api-key
+PHOENIX_PROJECT_NAME=junkie-prod
+```
+
+#### Access Phoenix Dashboard
+
+1. Go to [app.phoenix.arize.com](https://app.phoenix.arize.com)
+2. Navigate to your project (e.g., "junkie-prod")
+3. View traces, spans, and metrics
+
+#### What Gets Traced
+
+With `auto_instrument=True`, Phoenix automatically traces:
+
+- **LLM Calls**: Model requests/responses (OpenAI, Groq, etc.)
+- **Agent Runs**: Full agent execution flows
+- **Tool Usage**: Tool calls and results
+- **Embeddings**: Vector operations (if used)
+- **Retrieval**: RAG queries (if used)
+
+### Trace Data
+
+Each trace includes:
+
+- **Span ID**: Unique identifier
+- **Parent Span**: Hierarchical relationships
+- **Duration**: Execution time
+- **Attributes**: Model name, temperature, tokens, etc.
+- **Events**: Errors, warnings, custom events
+- **Status**: Success/error status
+
+### Performance Considerations
+
+#### Batching
+
+The `batch=True` setting groups traces before sending:
+
+```python
+tracer_provider = register(
+    project_name=PHOENIX_PROJECT_NAME,
+    endpoint=PHOENIX_ENDPOINT,
+    auto_instrument=True,
+    batch=True,  # Reduces overhead
+)
+```
+
+**Benefits**:
+- Lower network overhead
+- Reduced impact on application performance
+- Better throughput for high-volume applications
+
+#### Conditional Loading
+
+Phoenix dependencies are only loaded when tracing is enabled:
+
+```python
+if not TRACING_ENABLED:
+    return None
+
+# Import only if needed
+from phoenix.otel import register
+```
+
+This avoids importing heavy dependencies in development or when tracing is disabled.
+
+## Logging Configuration
+
+### Debug Mode
+
+Control logging verbosity via environment variables:
+
+```bash
+# Enable debug logs (verbose)
+DEBUG_MODE=true
+
+# Debug level (1-3)
+DEBUG_LEVEL=1
+```
+
+**Defined in**: `core/config.py:21-22`
+
+### Production Logging
+
+**Recommended settings for production:**
+
+```bash
+DEBUG_MODE=false  # Reduce log verbosity
+DEBUG_LEVEL=1     # Minimal debug output
+```
+
+This reduces noise and improves performance.
+
+### Log Levels
+
+Junkie uses Python's standard logging:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+logger.info("Agent started")
+logger.warning("API rate limit approaching")
+logger.error("Database connection failed", exc_info=True)
+```
+
+**Log levels:**
+- `DEBUG`: Detailed information for debugging
+- `INFO`: General informational messages
+- `WARNING`: Warning messages (recoverable issues)
+- `ERROR`: Error messages (with stack traces)
+- `CRITICAL`: Critical failures
+
+### Viewing Logs
+
+#### Railway
+
+1. Go to your project
+2. Click on the service
+3. Navigate to "Logs" tab
+4. Filter by level or search
+
+#### Docker
+
+```bash
+# View all logs
+docker logs junkie-bot
+
+# Follow logs in real-time
+docker logs -f junkie-bot
+
+# Filter by timestamp
+docker logs --since 1h junkie-bot
+
+# Last N lines
+docker logs --tail 100 junkie-bot
+```
+
+#### Local Development
+
+Logs are printed to stdout/stderr. Redirect to a file:
+
+```bash
+python main.py 2>&1 | tee app.log
+```
+
+## Observability Best Practices
+
+### 1. Always Enable Tracing in Production
+
+```bash
+TRACING=true
+PHOENIX_PROJECT_NAME=junkie-prod
+```
+
+This provides visibility into agent behavior and helps diagnose issues.
+
+### 2. Use Structured Logging
+
+```python
+logger.info(f"Agent completed task", extra={
+    "agent_id": agent.id,
+    "duration": duration,
+    "tokens_used": tokens,
+})
+```
+
+### 3. Monitor Key Metrics
+
+Track:
+- Agent success/failure rates
+- Average execution time
+- Token usage and costs
+- API error rates
+- Database query performance
+
+### 4. Set Up Alerts
+
+Configure Phoenix or logging alerts for:
+- High error rates
+- Slow agent runs (> threshold)
+- API quota warnings
+- Database connection failures
+
+### 5. Disable Debug Logs in Production
+
+```bash
+DEBUG_MODE=false  # Critical for performance
+```
+
+### 6. Use Separate Projects per Environment
+
+```bash
+# Development
+PHOENIX_PROJECT_NAME=junkie-dev
+
+# Staging
+PHOENIX_PROJECT_NAME=junkie-staging
+
+# Production
+PHOENIX_PROJECT_NAME=junkie-prod
+```
+
+This isolates traces and makes debugging easier.
+
+## Troubleshooting
+
+### Phoenix Not Tracing
+
+**Check if tracing is enabled:**
+```bash
+echo $TRACING  # Should be "true"
+```
+
+**Check API key:**
+```bash
+echo $PHOENIX_API_KEY  # Should not be empty
+```
+
+**Check logs for errors:**
+```bash
+# Look for Phoenix initialization messages
+docker logs junkie-bot | grep -i phoenix
+```
+
+**Common issues:**
+- `TRACING=false` or not set
+- Missing or invalid `PHOENIX_API_KEY`
+- `arize-phoenix` package not installed (check `requirements.txt`)
+- Network issues connecting to Phoenix endpoint
+
+### High Overhead from Tracing
+
+**Ensure batching is enabled:**
+
+Check `core/observability.py:38`:
+
+```python
+tracer_provider = register(
+    batch=True,  # Must be True
+)
+```
+
+**Reduce trace volume:**
+- Sample traces (e.g., 10% of requests)
+- Filter out low-value spans
+- Adjust batch size/timeout
+
+### Missing Traces
+
+**Check initialization:**
+
+Look for this log message:
+```
+Phoenix tracing enabled (project: junkie-production)
+```
+
+If missing, check:
+1. `TRACING` environment variable
+2. Import errors in logs
+3. Phoenix initialization exceptions
+
+**Verify auto-instrumentation:**
+
+Ensure `auto_instrument=True` in `core/observability.py:37`.
+
+## Next Steps
+
+- [Environment Setup](/deployment/environment-setup) - Configure tracing variables
+- [Troubleshooting](/deployment/troubleshooting) - Debug tracing issues
+- [Phoenix Documentation](https://docs.arize.com/phoenix) - Learn more about Phoenix

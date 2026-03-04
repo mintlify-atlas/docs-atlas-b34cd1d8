@@ -1,0 +1,243 @@
+---
+title: Railway Deployment
+description: Deploy Junkie to Railway with automatic builds and monitoring
+---
+
+## Overview
+
+Railway provides a simple platform for deploying containerized applications. Junkie can be deployed to Railway with minimal configuration.
+
+## Prerequisites
+
+- Railway account ([railway.app](https://railway.app))
+- GitHub repository with Junkie code
+- Required API keys and credentials
+
+## Deployment Steps
+
+### 1. Create New Project
+
+1. Go to [Railway Dashboard](https://railway.app/dashboard)
+2. Click "New Project"
+3. Select "Deploy from GitHub repo"
+4. Authorize Railway to access your repository
+5. Select your Junkie repository
+
+### 2. Configure Build Settings
+
+Railway will automatically detect the `Dockerfile` and use it for builds.
+
+**Build Configuration:**
+- **Build Command**: Automatically uses Dockerfile
+- **Start Command**: `python main.py` (defined in Dockerfile CMD)
+- **Root Directory**: `/` (unless your code is in a subdirectory)
+
+### 3. Set Environment Variables
+
+Configure all required environment variables in Railway's dashboard:
+
+#### Required Variables
+
+```bash
+# Database
+POSTGRES_URL=postgresql://user:password@host:port/database
+
+# Model Provider
+CUSTOM_PROVIDER=groq
+CUSTOM_MODEL=openai/gpt-oss-120b
+GROQ_API_KEY=your-groq-api-key
+
+# Discord (if using Discord bot)
+DISCORD_TOKEN=your-discord-token
+```
+
+#### Optional Variables
+
+```bash
+# Tracing
+TRACING=true
+PHOENIX_API_KEY=your-phoenix-api-key
+PHOENIX_PROJECT_NAME=junkie-production
+
+# Agent Configuration
+MODEL_TEMPERATURE=0.3
+MODEL_TOP_P=0.9
+AGENT_RETRIES=2
+DEBUG_MODE=false
+MAX_AGENTS=100
+
+# Other API Keys
+FIRECRAWL_API_KEY=your-firecrawl-key
+```
+
+See [Environment Setup](/deployment/environment-setup) for a complete list.
+
+### 4. Add PostgreSQL Database
+
+Railway offers managed PostgreSQL databases:
+
+1. Click "New" in your project
+2. Select "Database" → "PostgreSQL"
+3. Railway will create a database and provide connection details
+4. Copy the `DATABASE_URL` variable
+5. Set it as `POSTGRES_URL` in your service environment variables
+
+### 5. Deploy
+
+1. Click "Deploy" or push to your GitHub repository
+2. Railway will automatically:
+   - Clone your repository
+   - Build the Docker image
+   - Start the container
+   - Expose logs in the dashboard
+
+## Monitoring
+
+### View Logs
+
+Railway provides real-time logs in the dashboard:
+
+1. Go to your project
+2. Click on the service
+3. Navigate to the "Logs" tab
+4. Filter by log level or search for specific messages
+
+### Deployment Status
+
+Monitor deployment status:
+
+- **Building**: Docker image is being built
+- **Deploying**: Container is starting
+- **Active**: Application is running
+- **Failed**: Check logs for errors
+
+### Metrics
+
+Railway provides basic metrics:
+
+- **CPU Usage**: Monitor CPU consumption
+- **Memory Usage**: Track memory footprint
+- **Network**: Incoming/outgoing traffic
+
+## Phoenix Tracing Integration
+
+For detailed observability, enable Phoenix tracing:
+
+```bash
+# In Railway environment variables
+TRACING=true
+PHOENIX_API_KEY=your-phoenix-api-key
+PHOENIX_ENDPOINT=https://app.phoenix.arize.com/s/your-space/v1/traces
+PHOENIX_PROJECT_NAME=junkie-railway
+```
+
+See [Monitoring](/deployment/monitoring) for more details on Phoenix tracing.
+
+## Automatic Deployments
+
+### GitHub Integration
+
+Railway automatically deploys when you push to your repository:
+
+1. Push changes to GitHub
+2. Railway detects the push
+3. Triggers a new build
+4. Deploys the updated container
+
+### Branch Deployments
+
+Deploy different branches to different Railway services:
+
+- `main` branch → Production service
+- `staging` branch → Staging service
+- `dev` branch → Development service
+
+Configure this in Railway's project settings under "Service" → "Source".
+
+## Coolify Alternative
+
+The project includes Coolify webhook integration in the CI/CD workflow (`.github/workflows/main.yml`).
+
+If using Coolify instead of Railway:
+
+1. Set up Coolify webhook URL
+2. Add `COOLIFY_WEBHOOK` and `COOLIFY_TOKEN` to GitHub secrets
+3. Deployments trigger automatically after Docker image builds
+
+## Scaling
+
+### Vertical Scaling
+
+Increase resources for your service:
+
+1. Go to service settings
+2. Adjust **vCPU** and **Memory** allocations
+3. Railway will restart the service with new resources
+
+### Horizontal Scaling
+
+Railway supports horizontal scaling:
+
+1. Increase replica count in service settings
+2. Ensure your application supports multiple instances
+3. Use a shared database (PostgreSQL) for state
+
+**Note**: Discord bots typically run as a single instance. Horizontal scaling is more useful for API-based agents.
+
+## Custom Domains
+
+Expose your service via a custom domain:
+
+1. Go to service settings
+2. Click "Domains"
+3. Add a custom domain
+4. Update DNS records as instructed
+
+## Cost Optimization
+
+### Tips
+
+1. **Right-size Resources**: Start with minimal resources and scale as needed
+2. **Reduce Debug Logging**: Set `DEBUG_MODE=false` in production
+3. **Use Shared Databases**: Railway's PostgreSQL is cost-effective
+4. **Monitor Usage**: Track CPU/memory to avoid over-provisioning
+
+## Troubleshooting
+
+### Deployment Fails
+
+**Check build logs:**
+1. Go to "Deployments" tab
+2. Click on the failed deployment
+3. Review build output for errors
+
+**Common issues:**
+- Missing dependencies in `requirements.txt`
+- Invalid Dockerfile syntax
+- Git authentication issues (for Git-based dependencies)
+
+### Application Crashes
+
+**Check runtime logs:**
+1. Go to "Logs" tab
+2. Look for error messages or stack traces
+
+**Common causes:**
+- Missing environment variables
+- Database connection failures
+- Invalid API keys
+
+See [Troubleshooting](/deployment/troubleshooting) for detailed debugging steps.
+
+### Service Won't Start
+
+1. Verify all required environment variables are set
+2. Check `POSTGRES_URL` connection string format
+3. Test API keys locally before deploying
+4. Review logs for specific error messages
+
+## Next Steps
+
+- [Environment Setup](/deployment/environment-setup) - Configure production variables
+- [Monitoring](/deployment/monitoring) - Set up Phoenix tracing
+- [Troubleshooting](/deployment/troubleshooting) - Debug common issues

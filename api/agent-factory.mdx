@@ -1,0 +1,135 @@
+---
+title: Agent Factory
+description: Functions for creating and managing AI agent teams
+---
+
+The Agent Factory module provides functions for creating and managing AI agent teams with different specialized capabilities.
+
+## create_model
+
+Create a model instance for a specific user.
+
+```python
+def create_model(user_id: str)
+```
+
+<ParamField path="user_id" type="str" required>
+  User ID for model configuration
+</ParamField>
+
+<ResponseField name="return" type="OpenAILike">
+  Configured model instance (Groq or Custom provider)
+</ResponseField>
+
+### Example
+
+```python
+from agent.agent_factory import create_model
+
+model = create_model("user_123")
+```
+
+## create_team_for_user
+
+Create a full AI Team for a specific user with multiple specialized agents.
+
+```python
+def create_team_for_user(user_id: str, client=None)
+```
+
+<ParamField path="user_id" type="str" required>
+  User ID to create team for
+</ParamField>
+
+<ParamField path="client" type="discord.Client" default="None">
+  Discord client instance for bio tools
+</ParamField>
+
+<ResponseField name="return" type="tuple">
+  Tuple of (model, team) instances
+</ResponseField>
+
+### Team Members
+
+The created team includes:
+- **Code Agent**: Sandbox execution, code generation (GPT-5)
+- **Perplexity Agent**: Real-time web research (Sonar Pro)
+- **Compound Agent**: Fast code execution (Groq Compound)
+- **Context QnA Agent**: Chat history analysis
+- **MCP Agent** (optional): MCP tool interactions
+
+### Example
+
+```python
+from agent.agent_factory import create_team_for_user
+
+model, team = create_team_for_user("user_123")
+```
+
+## get_or_create_team
+
+Get existing team for a user or create a new one. Implements LRU cache with automatic resource cleanup.
+
+```python
+async def get_or_create_team(user_id: str, client=None)
+```
+
+<ParamField path="user_id" type="str" required>
+  User ID to get or create team for
+</ParamField>
+
+<ParamField path="client" type="discord.Client" default="None">
+  Discord client instance
+</ParamField>
+
+<ResponseField name="return" type="Team">
+  Team instance (existing or newly created)
+</ResponseField>
+
+### Caching Behavior
+
+- Maintains up to `MAX_AGENTS` teams in memory
+- Uses LRU eviction when cache is full
+- Automatically cleans up evicted team resources
+- Thread-safe with per-user locks
+
+### Example
+
+```python
+from agent.agent_factory import get_or_create_team
+
+team = await get_or_create_team("user_123")
+result = await team.arun("Generate a report")
+```
+
+## get_prompt
+
+Retrieve system prompt from Phoenix or fallback to local prompt.
+
+```python
+def get_prompt() -> str
+```
+
+<ResponseField name="return" type="str">
+  System prompt content
+</ResponseField>
+
+### Example
+
+```python
+from agent.agent_factory import get_prompt
+
+prompt = get_prompt()
+```
+
+## Configuration
+
+The module uses these environment variables:
+
+- `PROVIDER`: Model provider (groq or custom)
+- `MODEL_NAME`: Model identifier
+- `CUSTOM_PROVIDER_API_KEY`: Custom provider API key
+- `GROQ_API_KEY`: Groq API key
+- `MAX_AGENTS`: Maximum teams in cache (default: 100)
+- `POSTGRES_URL`: Database URL for sessions
+- `FIRECRAWL_API_KEY`: Optional Firecrawl integration

@@ -1,0 +1,414 @@
+---
+title: Memory Management
+description: User memories, memory manager, and persistence configuration
+---
+
+## Overview
+
+Junkie's memory system enables agents to remember user preferences, past interactions, and important context across conversations. It uses the Agno MemoryManager with PostgreSQL persistence.
+
+## Architecture
+
+Memory system components:
+
+1. **MemoryManager**: Processes and stores memories using a dedicated model
+2. **PostgreSQL Database**: Persistent storage for user memories
+3. **Memory Model**: Fast LLM for memory operations (Groq)
+4. **Team Integration**: Memory-enabled team configuration
+
+## Memory Model Setup
+
+```python
+# agent/agent_factory.py:153-161
+memory_model = OpenAILike(
+    id="openai/gpt-oss-120b",
+    base_url="https://api.groq.com/openai/v1",
+    api_key=GROQ_API_KEY,
+)
+memory_manager = MemoryManager(
+    model=memory_model,
+    db=db,
+)
+```
+
+### Why Groq for Memory?
+
+- **Speed**: Fast processing for memory operations
+- **Cost-effective**: Memory operations are frequent
+- **Sufficient capability**: 120B parameter model handles memory tasks well
+
+### Model Configuration
+
+```python
+id="openai/gpt-oss-120b"  # Groq's 120B model
+base_url="https://api.groq.com/openai/v1"
+api_key=GROQ_API_KEY
+```
+
+Configure via environment:
+
+```bash
+GROQ_API_KEY=your_groq_api_key
+```
+
+## Database Configuration
+
+### PostgreSQL Setup
+
+```python
+# agent/agent_factory.py:87-97
+if POSTGRES_URL:
+    async_db_url = convert_to_async_url(POSTGRES_URL)
+    db = AsyncPostgresDb(
+        db_url=async_db_url,
+        session_table="agent_sessions",  # Session/history storage
+        memory_table="user_memories",    # User memory storage
+    )
+    logger.info("[DB] Using AsyncPostgresDb for session & memory storage")
+else:
+    db = None
+    logger.warning("[DB] No POSTGRES_URL configured - sessions and memories will not persist!")
+```
+
+### Async URL Conversion
+
+PostgreSQL URLs are converted to async format:
+
+```python
+# agent/agent_factory.py:60-81
+def convert_to_async_url(db_url: str) -> str:
+    """Convert a postgresql:// URL to postgresql+asyncpg:// format for async operations."""
+    if not db_url:
+        return db_url
+    
+    # Already using async driver
+    if "+asyncpg" in db_url or "+psycopg_async" in db_url:
+        return db_url
+    
+    try:
+        parsed = make_url(db_url)
+        # Reconstruct URL with asyncpg driver
+        async_url = f"postgresql+asyncpg://{parsed.username}:{parsed.password}@{parsed.host}"
+        if parsed.port:
+            async_url += f":{parsed.port}"
+        async_url += f"/{parsed.database}"
+        if parsed.query:
+            async_url += f"?{parsed.query}"
+        return async_url
+    except Exception as e:
+        logger.warning(f"[DB] Failed to convert URL to async format: {e}")
+        return db_url
+```
+
+Example conversions:
+
+```python
+# Input
+postgresql://user:pass@localhost:5432/junkie
+
+# Output
+postgresql+asyncpg://user:pass@localhost:5432/junkie
+```
+
+### Database Tables
+
+Two tables are used:
+
+1. **agent_sessions**: Conversation history and session state
+2. **user_memories**: User-specific memories and preferences
+
+```sql
+-- Example structure (created automatically by Agno)
+CREATE TABLE user_memories (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(255),
+    memory TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE agent_sessions (
+    id SERIAL PRIMARY KEY,
+    session_id VARCHAR(255),
+    user_id VARCHAR(255),
+    messages JSONB,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+## Team Memory Integration
+
+```python
+# agent/agent_factory.py:310-327
+team = Team(
+    name="Hero Team",
+    model=model,
+    db=db,  # PostgreSQL connection
+    members=agents,
+    tools=[BioTools(client=client), CalculatorTools()],
+    instructions=get_prompt(),
+    num_history_runs=AGENT_HISTORY_RUNS,
+    enable_user_memories=True,  # Enable memory system
+    memory_manager=memory_manager,  # Groq-based memory manager
+    # ... other config
+)
+```
+
+### Memory Settings
+
+```python
+enable_user_memories=True  # Enable memory features
+memory_manager=memory_manager  # Use configured manager
+db=db  # PostgreSQL for persistence
+```
+
+## How Memory Works
+
+### 1. Memory Creation
+
+During conversations, the memory manager:
+
+1. Analyzes conversation context
+2. Identifies important information:
+   - User preferences
+   - Personal details
+   - Recurring topics
+   - Important facts
+3. Stores memories in PostgreSQL
+
+### 2. Memory Retrieval
+
+When responding:
+
+1. Relevant memories are fetched from database
+2. Memories are added to conversation context
+3. Agent uses memories to personalize responses
+
+### 3. Memory Updates
+
+Memories are updated when:
+
+- User preferences change
+- New information contradicts old memories
+- Details are clarified or corrected
+
+## Configuration
+
+Environment variables:
+
+```bash
+# PostgreSQL connection
+POSTGRES_URL=postgresql://user:password@localhost:5432/junkie
+
+# Groq API for memory processing
+GROQ_API_KEY=your_groq_api_key
+
+# Agent configuration
+AGENT_HISTORY_RUNS=10  # Number of conversation runs to keep
+```
+
+### History Runs
+
+```python
+num_history_runs=AGENT_HISTORY_RUNS
+```
+
+Controls how many conversation runs are kept in context:
+
+- **Low (5)**: Less context, faster responses
+- **Medium (10)**: Balanced (default)
+- **High (20+)**: More context, higher costs
+
+## Memory Operations
+
+### Check Memory Status
+
+```python
+# Verify memory is enabled
+print(f"Memories enabled: {team.enable_user_memories}")
+print(f"Memory manager: {team.memory_manager is not None}")
+print(f"Database: {team.db is not None}")
+```
+
+### View User Memories
+
+```sql
+-- Direct database query
+SELECT * FROM user_memories
+WHERE user_id = 'discord_user_123'
+ORDER BY updated_at DESC;
+```
+
+### Clear User Memories
+
+```sql
+-- Delete all memories for a user
+DELETE FROM user_memories
+WHERE user_id = 'discord_user_123';
+```
+
+## Persistence Behavior
+
+### With PostgreSQL
+
+✅ **Persists:**
+- User memories across restarts
+- Conversation history
+- Session state
+
+✅ **Survives:**
+- Application restarts
+- Container recreations
+- Code deployments
+
+### Without PostgreSQL
+
+❌ **Lost on restart:**
+- All memories
+- Conversation history
+- Session state
+
+⚠️ **Warning message:**
+```
+[DB] No POSTGRES_URL configured - sessions and memories will not persist!
+```
+
+## Team Cache and Memory
+
+Teams are cached per-user with LRU eviction:
+
+```python
+# agent/agent_factory.py:358-424
+async def get_or_create_team(user_id: str, client=None):
+    """Get existing team for a user or create a new one.
+    Uses LRU eviction if cache exceeds MAX_AGENTS.
+    """
+    # Check cache
+    if user_id in _user_teams:
+        _user_teams.move_to_end(user_id)  # Mark recently used
+        return _user_teams[user_id]
+    
+    # Evict oldest if cache full
+    if len(_user_teams) >= MAX_AGENTS:
+        oldest_user, oldest_team = _user_teams.popitem(last=False)
+        # Cleanup resources...
+```
+
+### Cache Implications
+
+- **In cache**: Memories loaded once, kept in memory
+- **Evicted**: Memories reloaded from database on next interaction
+- **Performance**: Database ensures consistency across cache evictions
+
+Configure cache size:
+
+```bash
+MAX_AGENTS=10  # Maximum number of cached teams
+```
+
+## Memory Best Practices
+
+### 1. Database Required for Production
+
+```bash
+# Always configure PostgreSQL in production
+POSTGRES_URL=postgresql://user:pass@db:5432/junkie
+```
+
+### 2. Monitor Memory Usage
+
+```sql
+-- Check memory table size
+SELECT 
+    COUNT(*) as total_memories,
+    COUNT(DISTINCT user_id) as unique_users
+FROM user_memories;
+
+-- Check average memories per user
+SELECT 
+    user_id,
+    COUNT(*) as memory_count
+FROM user_memories
+GROUP BY user_id
+ORDER BY memory_count DESC
+LIMIT 10;
+```
+
+### 3. Regular Backups
+
+```bash
+# Backup PostgreSQL
+pg_dump -U user -d junkie -t user_memories > memories_backup.sql
+pg_dump -U user -d junkie -t agent_sessions > sessions_backup.sql
+```
+
+### 4. Privacy Considerations
+
+Memories contain personal information:
+
+```python
+# Implement memory deletion for user privacy
+async def delete_user_data(user_id: str):
+    """Delete all memories and sessions for a user."""
+    await db.execute(
+        "DELETE FROM user_memories WHERE user_id = :user_id",
+        {"user_id": user_id}
+    )
+    await db.execute(
+        "DELETE FROM agent_sessions WHERE user_id = :user_id",
+        {"user_id": user_id}
+    )
+```
+
+## Troubleshooting
+
+### Memories Not Persisting
+
+**Check database configuration:**
+```python
+from agent.agent_factory import db
+print(f"Database configured: {db is not None}")
+```
+
+**Verify PostgreSQL connection:**
+```bash
+psql $POSTGRES_URL -c "SELECT COUNT(*) FROM user_memories;"
+```
+
+### Slow Memory Operations
+
+**Check Groq API:**
+```bash
+# Verify GROQ_API_KEY is set
+echo $GROQ_API_KEY
+```
+
+**Monitor memory model performance:**
+```python
+import time
+start = time.time()
+# Memory operation
+end = time.time()
+print(f"Memory operation took {end-start:.2f}s")
+```
+
+### Database Connection Errors
+
+**Verify async driver:**
+```python
+from agent.agent_factory import async_db_url
+print(f"Async URL: {async_db_url}")
+# Should contain +asyncpg
+```
+
+**Check PostgreSQL logs:**
+```bash
+docker compose logs postgres
+```
+
+## Next Steps
+
+- [Team Leader Configuration](/agents/team-leader)
+- [Creating Custom Agents](/agents/creating-agents)
+- [Database Setup](/configuration/database)

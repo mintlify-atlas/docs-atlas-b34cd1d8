@@ -1,0 +1,292 @@
+---
+title: "Chat Handler"
+description: "How Junkie processes Discord messages and handles chatbot interactions"
+---
+
+## Overview
+
+The chat handler is the core message processing system that powers Junkie's Discord interactions. It manages incoming messages, resolves mentions, builds context, and orchestrates team-based AI responses.
+
+## Chatbot Prefix
+
+Junkie uses the `!` prefix for chatbot commands. When a message starts with `!`, the bot processes it through its AI team system.
+
+```python
+# Chatbot prefix (!) — handle via Team
+chatbot_prefix = "!"
+if message.content.startswith(chatbot_prefix):
+    # Extract the prompt after the prefix
+    raw_prompt = processed_content[len(chatbot_prefix):].strip()
+```
+
+Source: `discord_bot/chat_handler.py:115-121`
+
+## Message Processing Flow
+
+### 1. Mention Resolution
+
+The handler converts Discord mentions into readable text for better context understanding:
+
+```python
+# Step 1: replace mentions with readable form for context
+processed_content = resolve_mentions(message)
+```
+
+### 2. Context Building
+
+The system builds a context-aware prompt using conversation history:
+
+```python
+# Step 2: build context-aware prompt
+logger.info(f"[chatbot] Building context for channel {message.channel.id}, user {message.author.id}")
+
+prompt = await build_context_prompt(
+    message, 
+    raw_prompt, 
+    limit=TEAM_LEADER_CONTEXT_LIMIT, 
+    reply_to_message=reply_to_message
+)
+```
+
+Source: `discord_bot/chat_handler.py:126-141`
+
+### 3. Reply Context Detection
+
+When users reply to specific messages, Junkie includes that context:
+
+```python
+# Try to find reply context if present
+reply_to_message = None
+if message.reference and message.reference.resolved:
+    if isinstance(message.reference.resolved, type(message)):
+        reply_to_message = message.reference.resolved
+        logger.info(f"[chatbot] Found reply context: {reply_to_message.id}")
+elif message.reference and message.reference.message_id:
+    try:
+        reply_to_message = await message.channel.fetch_message(message.reference.message_id)
+        logger.info(f"[chatbot] Fetched reply context: {reply_to_message.id}")
+    except Exception as e:
+        logger.warning(f"[chatbot] Failed to fetch reply context: {e}")
+```
+
+Source: `discord_bot/chat_handler.py:128-139`
+
+### 4. Image Attachment Support
+
+The handler extracts images from both the current message and any replied-to message:
+
+```python
+images = []
+
+# 1. Current message attachments
+if message.attachments:
+    for attachment in message.attachments:
+        if attachment.content_type and attachment.content_type.startswith('image/'):
+            images.append(Image(url=attachment.url))
+            logger.info(f"[chatbot] Found image attachment: {attachment.url}")
+
+# 2. Reply message attachments (if any)
+if reply_to_message and reply_to_message.attachments:
+    for attachment in reply_to_message.attachments:
+        if attachment.content_type and attachment.content_type.startswith('image/'):
+            images.append(Image(url=attachment.url))
+            logger.info(f"[chatbot] Found reply image attachment: {attachment.url}")
+```
+
+Source: `discord_bot/chat_handler.py:144-159`
+
+### 5. Team Execution
+
+The prompt is sent to the user's AI team with session isolation per channel:
+
+```python
+async with message.channel.typing():
+    user_id = str(message.author.id)
+    session_id = str(message.channel.id)  # Shared session per channel
+    
+    # Set the execution context for tools
+    set_current_channel_id(message.channel.id)
+    set_current_channel(message.channel)
+    
+    start_time = time.time()
+    try:
+        reply = await async_ask_junkie(
+            prompt, user_id=user_id, session_id=session_id, images=images, client=bot.bot
+        )
+    except Exception as e:
+        logger.exception(f"[chatbot] Failed to generate reply for user {user_id}")
+        await message.channel.send(
+            f"**Error:** Failed to process request: {str(e)[:500]}"
+        )
+        return
+```
+
+Source: `discord_bot/chat_handler.py:162-185`
+
+### 6. Response Formatting
+
+The bot restores mentions and formats the response:
+
+```python
+# Step 4: restore mentions in the reply
+final_reply = restore_mentions(reply, message.guild)
+# Remove any agent-supplied prefix artifacts
+final_reply = final_reply.replace("**🗿 hero:**", "")
+# Replace any leftover plain @name with actual mentions
+final_reply = correct_mentions(prompt, final_reply)
+
+# Append time taken
+final_reply += f"\n\n*(Time taken: {time_taken:.2f}s)*"
+```
+
+Source: `discord_bot/chat_handler.py:191-198`
+
+### 7. Message Chunking
+
+Long responses are split into multiple messages to respect Discord's 2000 character limit:
+
+```python
+# Step 5: send reply, chunking long outputs (Discord limit is ~2000 chars)
+chunk_size = 1900
+for chunk in [final_reply[i:i+chunk_size] for i in range(0, len(final_reply), chunk_size)]:
+    await message.channel.send(f"**🗿 hero:**\n{chunk}")
+```
+
+Source: `discord_bot/chat_handler.py:200-203`
+
+## Team Architecture
+
+The `async_ask_junkie` function manages team creation and execution:
+
+```python
+async def async_ask_junkie(user_text: str, user_id: str, session_id: str, images: list = None, client=None) -> str:
+    """
+    Run the user's Team with improved error handling and response validation.
+    """
+    # get_or_create_team returns a Team instance (or equivalent orchestrator)
+    team = await get_or_create_team(user_id, client=client)  # NOW ASYNC
+    try:
+        # Teams should implement async arun similar to Agents
+        result = await team.arun(
+            input=user_text, user_id=user_id, session_id=session_id, images=images
+        )
+        
+        # Basic response validation
+        content = result.content if result and hasattr(result, 'content') else ""
+        
+        # Ensure we have a valid response
+        if not content or not content.strip():
+            return "I apologize, but I couldn't generate a valid response. Please try rephrasing your question."
+        
+        return content
+    except Exception as e:
+        # Log the error for debugging
+        logger.error(f"Team error for user {user_id}: {e}", exc_info=True)
+        raise  # Re-raise to be handled by caller
+```
+
+Source: `discord_bot/chat_handler.py:25-48`
+
+## Event Handlers
+
+### Message Updates
+
+The handler automatically updates the cache when messages are edited:
+
+```python
+@bot.event
+async def on_message_edit(before, after):
+    """Handle message edits to update cache."""
+    await update_message_in_cache(before, after)
+```
+
+Source: `discord_bot/chat_handler.py:206-208`
+
+### Message Deletions
+
+Deleted messages are removed from the context cache:
+
+```python
+@bot.event
+async def on_message_delete(message):
+    """Handle message deletions to update cache."""
+    await delete_message_from_cache(message)
+```
+
+Source: `discord_bot/chat_handler.py:210-213`
+
+### Bot Initialization
+
+On startup, the bot initializes the database, sets up MCP tools, and starts message backfill:
+
+```python
+@bot.event
+async def on_ready():
+    logger.info("[on_ready] Bot ready event triggered!")
+    # Ensure MCP tools are connected/initialized
+    await setup_mcp()
+    
+    # Initialize Database
+    logger.info("[on_ready] Initializing database...")
+    await init_db()
+    logger.info("[on_ready] Database initialized")
+    
+    # Start Backfill Task
+    # Filter for TextChannels, DMs, and GroupChats where the bot has read permissions
+    text_channels = [
+        c for c in bot.bot.get_all_channels() 
+        if isinstance(c, (discord.TextChannel, discord.DMChannel, discord.GroupChannel))
+    ]
+```
+
+Source: `discord_bot/chat_handler.py:52-67`
+
+## Cache Integration
+
+Every message (both user and bot messages) is automatically cached for context building:
+
+```python
+@bot.event
+async def on_message(message):
+    # Update cache with new message (both user and bot messages for full context)
+    await append_message_to_cache(message)
+    
+    # Allow normal bot commands to be handled by discord.py
+    if message.content.startswith(bot.prefix):
+        await bot.bot.process_commands(message)
+        return
+```
+
+Source: `discord_bot/chat_handler.py:104-112`
+
+## Error Handling
+
+The handler includes comprehensive error handling with user-friendly messages:
+
+- Response validation ensures non-empty replies
+- Exceptions are logged with full stack traces
+- Users receive truncated error messages (max 500 chars)
+- Failed requests don't crash the bot
+
+## Performance Metrics
+
+Each response includes execution time for transparency:
+
+```python
+start_time = time.time()
+try:
+    reply = await async_ask_junkie(
+        prompt, user_id=user_id, session_id=session_id, images=images, client=bot.bot
+    )
+except Exception as e:
+    # error handling...
+    return
+
+end_time = time.time()
+time_taken = end_time - start_time
+
+# Append time taken
+final_reply += f"\n\n*(Time taken: {time_taken:.2f}s)*"
+```
+
+Source: `discord_bot/chat_handler.py:174-198`

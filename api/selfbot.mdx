@@ -1,0 +1,186 @@
+---
+title: SelfBot
+description: Discord selfbot wrapper for message visibility and command handling
+---
+
+The `SelfBot` class provides a Discord bot wrapper that sees all messages and processes commands for the owner.
+
+## SelfBot
+
+```python
+class SelfBot:
+    def __init__(self, *, token: str = None, prefix: str = "!")
+```
+
+<ParamField path="token" type="str" default="None">
+  Discord bot token. Falls back to `DISCORD_TOKEN` environment variable if not provided.
+</ParamField>
+
+<ParamField path="prefix" type="str" default="!">
+  Command prefix for the bot
+</ParamField>
+
+### Attributes
+
+<ResponseField name="token" type="str">
+  The Discord bot token used for authentication
+</ResponseField>
+
+<ResponseField name="bot" type="commands.Bot">
+  The underlying discord.py Bot instance
+</ResponseField>
+
+<ResponseField name="prefix" type="str">
+  The command prefix string
+</ResponseField>
+
+## Methods
+
+### command
+
+Register a command handler.
+
+```python
+def command(self, name: str = None, **kwargs)
+```
+
+<ParamField path="name" type="str" default="None">
+  Command name (defaults to function name)
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional command decorator arguments
+</ParamField>
+
+<ResponseField name="return" type="decorator">
+  Command decorator function
+</ResponseField>
+
+#### Example
+
+```python
+bot = SelfBot()
+
+@bot.command(name="ping")
+async def ping_command(ctx):
+    await ctx.send("Pong!")
+```
+
+### event
+
+Register an event handler.
+
+```python
+def event(self, coro)
+```
+
+<ParamField path="coro" type="coroutine" required>
+  Async function to handle the event
+</ParamField>
+
+<ResponseField name="return" type="decorator">
+  Event decorator function
+</ResponseField>
+
+#### Example
+
+```python
+bot = SelfBot()
+
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.bot.user}")
+```
+
+### run
+
+Start the bot and connect to Discord.
+
+```python
+def run(self)
+```
+
+Blocks until the bot disconnects or encounters an error.
+
+#### Example
+
+```python
+bot = SelfBot(token="your_token_here")
+bot.run()
+```
+
+## Built-in Events
+
+The SelfBot class registers these events by default:
+
+### on_ready
+
+Triggered when the bot successfully connects to Discord.
+
+```python
+@bot.event
+async def on_ready():
+    print(f"[SELF-BOT] Logged in as {bot.bot.user} (ID: {bot.bot.user.id})")
+```
+
+### on_message
+
+Triggered for every message the bot can see (not just mentions).
+
+```python
+@bot.event
+async def on_message(message: discord.Message):
+    if message.content.startswith(bot.prefix):
+        await bot.bot.process_commands(message)
+```
+
+## Usage Example
+
+```python
+from discord_bot.selfbot import SelfBot
+
+# Create bot instance
+bot = SelfBot(
+    token="your_discord_token",
+    prefix="!"
+)
+
+# Register custom command
+@bot.command()
+async def hello(ctx):
+    await ctx.send(f"Hello {ctx.author.name}!")
+
+# Register custom event
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    
+    print(f"Message from {message.author}: {message.content}")
+    
+    # Process commands
+    if message.content.startswith(bot.prefix):
+        await bot.bot.process_commands(message)
+
+# Start the bot
+bot.run()
+```
+
+## Configuration
+
+The bot can be configured using:
+
+**Environment Variables:**
+- `DISCORD_TOKEN`: Discord bot token (used if `token` parameter is None)
+
+**Constructor Parameters:**
+- `token`: Override environment variable
+- `prefix`: Custom command prefix
+
+## Features
+
+- Sees all messages in channels (not just mentions)
+- Processes commands with custom prefix
+- Built on discord.py commands framework
+- Self-bot mode enabled
+- Automatic token loading from environment

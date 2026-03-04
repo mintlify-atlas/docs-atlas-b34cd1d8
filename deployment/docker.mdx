@@ -1,0 +1,205 @@
+---
+title: Docker Deployment
+description: Build and run Junkie using Docker containers
+---
+
+## Overview
+
+Junkie includes a production-ready Dockerfile using a multi-stage build process with Python 3.12 and the `uv` package manager for fast, efficient builds.
+
+## Dockerfile
+
+The application uses a two-stage Docker build:
+
+```dockerfile
+# syntax=docker/dockerfile:1.7
+
+########## BUILDER ##########
+FROM python:3.12-slim AS builder
+WORKDIR /app
+
+# Install git for requirements.txt Git URLs
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install uv
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Install everything into a local environment using uv
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements.txt
+
+# Copy the project source
+COPY . .
+
+########## FINAL IMAGE ##########
+FROM python:3.12-slim
+WORKDIR /app
+
+# Copy the installed Python environment
+COPY --from=builder /usr/local /usr/local
+
+# Copy the app code
+COPY . .
+
+CMD ["python", "main.py"]
+```
+
+## Building the Image
+
+### Basic Build
+
+Build the Docker image with default settings:
+
+```bash
+docker build -t junkie:latest .
+```
+
+### Build with Cache
+
+The Dockerfile uses BuildKit cache mounts for faster rebuilds:
+
+```bash
+DOCKER_BUILDKIT=1 docker build -t junkie:latest .
+```
+
+### Build for Specific Platform
+
+Build for a specific platform (e.g., for deployment on different architectures):
+
+```bash
+docker build --platform linux/amd64 -t junkie:latest .
+```
+
+## Running the Container
+
+### Basic Run
+
+Run Junkie with environment variables from a `.env` file:
+
+```bash
+docker run --env-file .env junkie:latest
+```
+
+### Run with Custom Configuration
+
+Pass environment variables directly:
+
+```bash
+docker run \
+  -e POSTGRES_URL="postgresql://user:pass@host:5432/db" \
+  -e GROQ_API_KEY="your-groq-api-key" \
+  -e TRACING=true \
+  -e PHOENIX_API_KEY="your-phoenix-key" \
+  junkie:latest
+```
+
+### Run in Detached Mode
+
+Run the container in the background:
+
+```bash
+docker run -d --name junkie-bot --env-file .env junkie:latest
+```
+
+### View Logs
+
+Check container logs:
+
+```bash
+docker logs junkie-bot
+
+# Follow logs in real-time
+docker logs -f junkie-bot
+```
+
+## Docker Compose (Optional)
+
+Create a `docker-compose.yml` for easier management:
+
+```yaml
+version: '3.8'
+
+services:
+  junkie:
+    build: .
+    env_file:
+      - .env
+    restart: unless-stopped
+    environment:
+      - DEBUG_MODE=false
+      - TRACING=true
+```
+
+Run with Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+## CI/CD Integration
+
+The project includes GitHub Actions workflow for automated builds. See `.github/workflows/main.yml` for the complete configuration.
+
+### Key Features
+
+- Automated builds on push to `main` and `team` branches
+- Docker layer caching via Blacksmith
+- Multi-platform support (linux/amd64)
+- Automatic image tagging (latest, branch, SHA)
+- Integration with Coolify for automated deployments
+
+## Image Optimization
+
+### Multi-Stage Build Benefits
+
+1. **Smaller Final Image**: Build dependencies (git, uv) are excluded from the final image
+2. **Layer Caching**: Dependencies are cached separately from application code
+3. **Fast Rebuilds**: Only changed layers are rebuilt
+
+### Dependencies
+
+The image includes all dependencies from `requirements.txt`, including:
+
+- `agno` - Agent framework
+- `openai>=1.77.0` - OpenAI SDK
+- `arize-phoenix` - Phoenix tracing
+- `discord.py-self` - Discord integration
+- `e2b_code_interpreter` - Code execution
+- `psycopg2-binary` - PostgreSQL support
+- And more (see **requirements.txt**)
+
+## Troubleshooting
+
+### Build Fails with Git Dependency
+
+The Dockerfile installs `git` to handle Git-based dependencies in `requirements.txt` (like `discord.py-self`).
+
+If you encounter issues:
+
+```bash
+# Clear Docker build cache
+docker builder prune
+
+# Rebuild without cache
+docker build --no-cache -t junkie:latest .
+```
+
+### Container Exits Immediately
+
+Check logs for errors:
+
+```bash
+docker logs junkie-bot
+```
+
+Common causes:
+- Missing required environment variables
+- Invalid database connection string
+- Missing API keys
+
+See [Environment Setup](/deployment/environment-setup) and [Troubleshooting](/deployment/troubleshooting) for more details.

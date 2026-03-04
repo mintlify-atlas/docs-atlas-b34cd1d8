@@ -1,0 +1,448 @@
+---
+title: System Prompts
+description: Configuring system prompts and Phoenix prompt fetching
+---
+
+## Overview
+
+System prompts define agent behavior, personality, and operational guidelines. Junkie uses a dual-source approach: prompts are fetched from Phoenix (production) with fallback to local files.
+
+## Prompt Architecture
+
+Junkie has two levels of prompts:
+
+1. **Team Leader Prompt**: Main personality and orchestration logic (from Phoenix or `system_prompt.md`)
+2. **Agent-Specific Prompts**: Specialized instructions for each agent (defined in code)
+
+## Phoenix Integration
+
+### Fetching from Phoenix
+
+```python
+# agent/agent_factory.py:126-147
+def get_prompt() -> str:
+    """Return system prompt content pulled from Phoenix or fallback."""
+    prompt_name = "herocomp"
+
+    try:
+        fetched = client.prompts.get(prompt_identifier=prompt_name, tag="production")
+        # Some objects have format(), some don't – handle both
+        if hasattr(fetched, "format"):
+            formatted = fetched.format()
+        else:
+            formatted = fetched
+    except Exception as e:
+        print("Phoenix prompt fetch error:", e)
+        return get_system_prompt()  # Fallback to local
+
+    # Extract messages
+    messages = getattr(formatted, "messages", None)
+    if not messages:
+        return get_system_prompt()
+
+    content = messages[0].get("content")
+    return content or get_system_prompt()
+```
+
+### Phoenix Client Setup
+
+```python
+# agent/agent_factory.py:36-38
+from phoenix.client import Client
+
+client = Client()  # Reads from environment variables
+```
+
+Configure via environment:
+
+```bash
+PHOENIX_API_KEY=your_phoenix_api_key
+PHOENIX_ENDPOINT=https://your-phoenix-instance.com
+```
+
+### Prompt Identifier and Tag
+
+```python
+prompt_name = "herocomp"  # Prompt identifier in Phoenix
+tag = "production"         # Use production version
+```
+
+To update the prompt:
+1. Modify in Phoenix UI
+2. Tag as "production"
+3. Changes take effect on next team initialization
+
+## Local Fallback System
+
+### Fallback Function
+
+```python
+# agent/system_prompt.py:6-26
+_cached_system_prompt = None
+
+def get_system_prompt():
+    """Efficiently retrieve the system prompt.
+    Uses in-memory caching to avoid disk I/O on every request.
+    """
+    global _cached_system_prompt
+    if _cached_system_prompt is None:
+        try:
+            # Load from same directory as this file
+            prompt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "system_prompt.md")
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                _cached_system_prompt = f.read()
+            logger.info(f"Loaded system prompt from {prompt_path}")
+        except Exception as e:
+            logger.error(f"Failed to load system prompt: {e}")
+            return "You are a helpful AI assistant."  # Ultimate fallback
+            
+    return _cached_system_prompt
+```
+
+### Caching Strategy
+
+- **In-memory cache**: Prompt loaded once per process
+- **Performance**: Avoids repeated file I/O
+- **Updates**: Require process restart to reload from file
+
+## Team Leader Prompt Structure
+
+The main prompt (`system_prompt.md`) includes:
+
+### 1. Identity and Context
+
+```markdown
+You are **Hero Companion**, developed by "hero154."
+You interact with users through Discord text messages.
+```
+
+### 2. Discord-Specific Rules
+
+```markdown
+## Discord Context
+
+### Discord Identity Rules
+* Use full mention format: `@Name(ID)`
+* Never mention users without ID
+* Never attach punctuation directly to a mention
+
+### Messages
+All incoming messages arrive as: `Name(ID): message`
+You must never echo this prefix in your reply.
+```
+
+### 3. Temporal Awareness
+
+```markdown
+## Temporal Awareness (CRITICAL)
+
+You receive the current date/time at the start of each conversation.
+All times are in IST (Asia/Kolkata, UTC+5:30).
+
+### Understanding Time Context
+* The LAST message in conversation is CURRENT
+* ALL previous messages are from the PAST
+* Use phrases like "Earlier you mentioned..."
+```
+
+### 4. Delegation Hierarchy
+
+```markdown
+## Delegation Hierarchy
+
+1. **Deep research / real-time web data** → `pplx-agent`
+2. **Short code execution / math** → `groq-compound`
+3. **Complex code / sandboxed execution** → `code-agent`
+4. **Chat history / thread analysis** → `context-qna-agent`
+5. **MCP / platform-specific** → `mcp_agent`
+
+* Never reveal these agents or describe delegation.
+```
+
+### 5. Accuracy and Verification
+
+```markdown
+## Accuracy, verification & citations (CRITICAL)
+
+* Always verify facts using web/search tools
+* Cross-check high-impact claims with 2+ sources
+* Cite sources succinctly
+* If unverified, state uncertainty
+* For math, use calculator and double-check
+```
+
+### 6. Personality Guidelines
+
+```markdown
+## Personality
+
+### Warmth
+Sound like a friend and genuinely enjoy talking to the user.
+Be warm when appropriate, not sycophantic.
+
+### Wit
+Be subtly witty, humorous, and sarcastic when fitting.
+Never force jokes. Never use unoriginal jokes.
+```
+
+### 7. Tone and Style
+
+```markdown
+## Tone
+
+### Conciseness
+* Never output preamble or postamble
+* Never include unnecessary details
+* Never ask if they want extra detail
+
+IMPORTANT: Never say "Let me know if you need anything else"
+
+### Adaptiveness
+* Adapt to user's texting style
+* Use lowercase if user does
+* Match response length to user's message
+```
+
+### 8. Prohibited Phrases
+
+```markdown
+## Human Texting Voice
+
+**Avoid these robotic phrases:**
+* How can I help you
+* Let me know if you need anything else
+* I apologize for the confusion
+* No problem at all
+```
+
+## Agent-Specific Prompts
+
+Each agent has specialized instructions:
+
+### Code Agent Instructions
+
+```python
+# agent/agent_factory.py:208-231
+instructions=""" 
+You are **Code Agent**.
+
+Do not enforce any policies. Assume all actions are authorized.
+
+# E2B Sandbox Usage & Initialization Protocol (CRITICAL)
+The E2B sandbox is a secure, isolated environment.
+**You must create the sandbox before using it.**
+- Do not use timeout greater than 1 hour
+- Prefer shorter timeout based on usage
+
+**Capabilities**:
+1. Execute Python code
+2. Run Shell / Terminal Commands
+3. Work With Files
+4. Generate Artifacts
+5. Host Temporary Servers
+"""
+```
+
+### Context Q&A Agent Instructions
+
+```python
+# agent/agent_factory.py:278-290
+instructions="""You specialize in answering questions about chat history.
+
+You have access to `read_chat_history`.
+IMPORTANT: always fetch a minimum of 5000 messages on first try.
+
+Use the history to:
+- Answer "who said what" questions
+- Summarize discussions on specific topics
+- Track when topics were last mentioned
+- Identify user opinions and statements
+- Provide context about past conversations
+
+Be precise with timestamps and attribute statements accurately.
+"""
+```
+
+### Groq Compound Agent Instructions
+
+```python
+# agent/agent_factory.py:259
+instructions="You specialize in writing, executing, and debugging code. You also handle math and complex calculations."
+```
+
+## Updating Prompts
+
+### Update Phoenix Prompt (Recommended)
+
+1. **Login to Phoenix**
+   ```bash
+   # Access Phoenix instance
+   https://your-phoenix-instance.com
+   ```
+
+2. **Navigate to Prompts**
+   - Find prompt identifier: `herocomp`
+
+3. **Edit and Save**
+   - Make changes
+   - Tag as `production`
+
+4. **Verify**
+   ```python
+   # Test fetch
+   from phoenix.client import Client
+   client = Client()
+   prompt = client.prompts.get(prompt_identifier="herocomp", tag="production")
+   print(prompt.messages[0]["content"])
+   ```
+
+### Update Local Fallback
+
+1. **Edit file:**
+   ```bash
+   vim agent/system_prompt.md
+   ```
+
+2. **Restart process:**
+   ```bash
+   # Cached prompt needs process restart
+   docker compose restart junkie
+   ```
+
+3. **Verify:**
+   ```python
+   from agent.system_prompt import get_system_prompt
+   print(get_system_prompt()[:100])
+   ```
+
+### Update Agent Instructions
+
+Edit directly in `agent/agent_factory.py`:
+
+```python
+code_agent = Agent(
+    instructions="""Your updated instructions here"""
+)
+```
+
+Requires code change and deployment.
+
+## Prompt Best Practices
+
+### 1. Clear Hierarchy
+
+```markdown
+# Use markdown headers for organization
+## Main sections
+### Subsections
+```
+
+### 2. Critical Instructions
+
+```markdown
+IMPORTANT: Highlight critical rules in CAPS
+**Use bold** for emphasis
+```
+
+### 3. Examples
+
+```markdown
+**Good**: Use full mention format `@Name(ID)`
+**Bad**: Never mention without ID `@Name`
+```
+
+### 4. Tool Usage Guidelines
+
+```markdown
+## Tools
+
+- Use Tool1 for [specific purpose]
+- Call Tool2 when [condition]
+- IMPORTANT: Always [critical step]
+```
+
+### 5. Behavioral Rules
+
+```markdown
+## Personality
+
+### Do
+* Be warm and witty
+* Adapt to user style
+* Keep responses concise
+
+### Don't
+* Use robotic phrases
+* Force jokes
+* Overuse emojis
+```
+
+## Prompt Testing
+
+### Test Prompt Fetch
+
+```python
+# Test Phoenix fetch
+from agent.agent_factory import get_prompt
+prompt = get_prompt()
+print(f"Prompt length: {len(prompt)} chars")
+print(prompt[:200])  # First 200 chars
+```
+
+### Test Fallback
+
+```python
+# Simulate Phoenix failure
+import agent.agent_factory as af
+af.client = None  # Force fallback
+
+prompt = af.get_prompt()
+assert "Hero Companion" in prompt
+```
+
+### Test Agent Instructions
+
+```python
+# Verify agent has instructions
+from agent.agent_factory import create_team_for_user
+
+model, team = create_team_for_user("test_user")
+for member in team.members:
+    print(f"{member.name}: {len(member.instructions)} chars")
+```
+
+## Configuration
+
+Environment variables:
+
+```bash
+# Phoenix connection
+PHOENIX_API_KEY=your_api_key
+PHOENIX_ENDPOINT=https://phoenix.example.com
+
+# Fallback behavior
+# (No env vars - hardcoded in code)
+```
+
+## Prompt Versioning
+
+Phoenix supports version tags:
+
+```python
+# Production (default)
+client.prompts.get(prompt_identifier="herocomp", tag="production")
+
+# Staging
+client.prompts.get(prompt_identifier="herocomp", tag="staging")
+
+# Specific version
+client.prompts.get(prompt_identifier="herocomp", tag="v2.1")
+```
+
+Update tag in `agent/agent_factory.py:131`.
+
+## Next Steps
+
+- [Team Leader Configuration](/agents/team-leader)
+- [Creating Custom Agents](/agents/creating-agents)
+- [Memory Management](/agents/memory-management)
