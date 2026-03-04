@@ -5,6 +5,24 @@ description: Complete reference for all environment variables in Junkie
 
 Junkie uses environment variables for configuration. All settings can be configured through a `.env` file in the root directory.
 
+## Discord Configuration
+
+<ParamField path="DISCORD_TOKEN" type="string" required>
+  Your Discord account token. Required to connect the selfbot to Discord.
+  
+  <Warning>
+    This token provides full access to your Discord account. Never share it or commit it to version control.
+  </Warning>
+</ParamField>
+
+<ParamField path="LOG_LEVEL" type="string" default="INFO">
+  Logging level for the bot. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+</ParamField>
+
+<ParamField path="MESSAGE_SYNC_LIMIT" type="int" default="200">
+  Number of recent messages to sync after startup to detect offline edits/deletes.
+</ParamField>
+
 ## Database Configuration
 
 <ParamField path="POSTGRES_URL" type="string" default="">
@@ -45,6 +63,12 @@ Junkie uses environment variables for configuration. All settings can be configu
 
 <ParamField path="FIRECRAWL_API_KEY" type="string" default="">
   API key for Firecrawl web scraping service. When set, enables the Firecrawl MCP server for the code agent.
+</ParamField>
+
+<ParamField path="E2B_API_KEY" type="string" required>
+  API key for E2B code execution sandboxes. Required for the code agent to run Python code and shell commands.
+  
+  Get your API key at [e2b.dev](https://e2b.dev)
 </ParamField>
 
 ## Agent Configuration
@@ -126,14 +150,23 @@ Junkie uses environment variables for configuration. All settings can be configu
 ## Example .env File
 
 ```bash
+# Discord Configuration (Required)
+DISCORD_TOKEN=your_discord_token
+LOG_LEVEL=INFO
+MESSAGE_SYNC_LIMIT=200
+
 # Database
 POSTGRES_URL=postgresql://user:password@localhost:5432/junkie
 
-# Model Configuration
+# Model Configuration (Required)
 CUSTOM_PROVIDER=https://api.openai.com/v1
 CUSTOM_MODEL=gpt-5
 CUSTOM_PROVIDER_API_KEY=sk-...
 GROQ_API_KEY=gsk_...
+
+# External Services
+E2B_API_KEY=your_e2b_api_key
+FIRECRAWL_API_KEY=your_firecrawl_key
 
 # Agent Settings
 MODEL_TEMPERATURE=0.3
